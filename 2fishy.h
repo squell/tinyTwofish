@@ -26,17 +26,18 @@ typedef unsigned int word;
 typedef unsigned long int word;
 #  else
 #    error Your computer architecture is too exotic.
-typedef void *word;
+typedef void* word;
 #  endif
 typedef unsigned char byte;
 typedef unsigned short int hword;
+typedef int static_assert_words_are_32bit[sizeof(word)==4?1:-1];
 #endif
 
 typedef word schedule[8+2*16];
 typedef byte sbox[4*256];
 
 void twofish_init(void);
-void twofish_key(int bits, byte const *master_key, schedule keys, sbox sbox);
-void twofish_enc(void *opaque, word const *keys, const sbox sbox);
+void twofish_key(int bits, byte const *master_key, schedule, sbox);
+void twofish_enc(void *dest, void const *src, schedule const, sbox const);
 
 #endif

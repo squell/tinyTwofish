@@ -11,6 +11,7 @@
  */
 
 #include "2fishy.h"
+#include <string.h>
 
 #define MATH_OPT
 
@@ -77,7 +78,7 @@ static word rol(word x, int n)
  * core encryption functions start here 
  */
 
-static void whiten(word *dat, const word *keys)
+static void whiten(word *dat, word const *keys)
 {
     dat[0] ^= keys[0];
     dat[1] ^= keys[1];
@@ -127,7 +128,7 @@ static word mds(word w)
 #endif
 }
 
-static word round_g(word w, const sbox sbox)
+static word round_g(word w, sbox const sbox)
 {
     vector x;
     x.word = w;
@@ -138,7 +139,7 @@ static word round_g(word w, const sbox sbox)
     return mds(x.word);
 }
 
-static void round_F(word *out, word const *in, word const *keys, const sbox sbox)
+static void round_F(word *out, word const *in, word const *keys, sbox const sbox)
 {
     word x = round_g(in[0], sbox);
     word y = round_g(rol(in[1],8), sbox);
@@ -147,10 +148,12 @@ static void round_F(word *out, word const *in, word const *keys, const sbox sbox
     out[1] = rol(out[1], 1) ^ y+keys[1];
 }
 
-void twofish_enc(void *opaque, word const *keys, const sbox sbox)
+void twofish_enc(void *dest, void const *src, schedule const keys, sbox const sbox)
 {
-    word *data = opaque;
+    word data[4];
     int i;
+    memcpy(data, src, sizeof data);
+
     whiten(data, keys);
     for(i=0; i < 16; i+=2) {
 	round_F(data+2, data+0, keys+2*i+ 8, sbox);
@@ -160,6 +163,8 @@ void twofish_enc(void *opaque, word const *keys, const sbox sbox)
     swap(word, data[0], data[2]);
     swap(word, data[1], data[3]);
     whiten(data, keys+4);
+
+    memcpy(dest, data, sizeof data);
 }
 
 /* 
@@ -212,7 +217,7 @@ static word round_h_aux(word w, byte const *select)
     return x.word;
 }
 
-static word round_h(word x, int k, word (*L)[2])
+static word round_h(word x, int k, word *L)
 {
     static vector const selector[5] = {
         0x00010001,
@@ -222,39 +227,39 @@ static word round_h(word x, int k, word (*L)[2])
         0x01000001
     };
     for( ; k; k--)
-        x = round_h_aux(x, selector[k].byte) ^ *L[k-1];
+        x = round_h_aux(x, selector[k].byte) ^ L[(k-1)*2];
     return round_h_aux(x, selector[k].byte);
 }
 
 void twofish_key(int bits, byte const *master_key, schedule keys, sbox sbox)
 {
-    word (*even)[2] = (void*)master_key;
-    word (*odd) [2] = (void*)(master_key+4);
-    byte (*rsin)[8] = (void*)master_key;
-    word rsout[4][2]; /* waste some space here for uniformity*/
+    word key_copy[8];
     int n, k = bits/64;
 
-    for(n=0; n < k; n++)
-	*rsout[k-n-1] = reedsolomon(rsin[n]);
-
-    /* compute the sboxes */
-    for(n=0; n < 256; n++) {
-	vector x;
-	x.word = round_h(n*0x01010101, k, rsout);
-	sbox[0x000|n] = x.byte[0];
-	sbox[0x100|n] = x.byte[1];
-	sbox[0x200|n] = x.byte[2];
-	sbox[0x300|n] = x.byte[3];
-    }
+    /* just to be really pedantic about alignment */
+    memcpy(key_copy, master_key, bits/8);
 
     /* compute the roundkeys */
     for(n=0; n < 20; n++) {
-	word a = mds(round_h((2*n  )*0x01010101, k, even));
-	word b = mds(round_h((2*n+1)*0x01010101, k, odd));
+	word a = mds(round_h((2*n  )*0x01010101, k, key_copy  ));
+	word b = mds(round_h((2*n+1)*0x01010101, k, key_copy+1));
 	b = rol(b, 8);
 	pht(&a, &b);
 	keys[2*n  ] = a;
 	keys[2*n+1] = rol(b, 9);
+    }
+
+    /* compute the sboxes */
+    for(n=0; n < k; n++)
+	key_copy[(k-n-1)*2] = reedsolomon(&master_key[n*8]);
+
+    for(n=0; n < 256; n++) {
+	vector x;
+	x.word = round_h(n*0x01010101, k, key_copy);
+	sbox[0x000|n] = x.byte[0];
+	sbox[0x100|n] = x.byte[1];
+	sbox[0x200|n] = x.byte[2];
+	sbox[0x300|n] = x.byte[3];
     }
 }
 
