@@ -41,7 +41,7 @@ void run(int bits)
 	printf("PT=");
 	print(128/8, buf[i%2]);
 
-	twofish_enc(buf[i%2], key, sbox);
+	twofish_enc(buf[i%2], buf[i%2], key, sbox);
 	printf("CT=");
 	print(128/8, buf[i%2]);
     }
