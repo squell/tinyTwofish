@@ -47,17 +47,19 @@
     cxor reg, poly>>1, tmp
 .endm
 
+# NOTE: sbox layout is different from the C impl.
+
 # in: ax, out: di, clobbers: r10,r11,bx
 round_g:
     movzx ebx, al # pass eax throug the sboxes
-    mov al, [rcx+0x000+rbx]
+    mov al, [rcx+rbx*4]
     movzx ebx, ah
-    mov ah, [rcx+0x100+rbx]
+    mov ah, [rcx+rbx*4+1]
     ror eax, 16
     movzx ebx, al
-    mov al, [rcx+0x200+rbx]
+    mov al, [rcx+rbx*4+2]
     movzx ebx, ah
-    mov ah, [rcx+0x300+rbx]
+    mov ah, [rcx+rbx*4+3]
     ror eax, 16
     mov edi, eax
 
@@ -263,13 +265,7 @@ twofish_kei:
     call round_h_step
     rol r11d, 4
     movzx ebx, r9b
-
-    mov [rbp+rbx+0x000], al
-    mov [rbp+rbx+0x100], ah
-    shr eax, 16
-    mov [rbp+rbx+0x200], al
-    mov [rbp+rbx+0x300], ah
-
+    mov [rbp+rbx*4], eax
     add r9d, 0x01010101 
     jnc 2b
 
@@ -282,29 +278,19 @@ twofish_kei:
 
     xor r9d, r9d
 2:  movzx ebx, r9b
-    mov al, [rbp+rbx+0x200]
-    mov ah, [rbp+rbx+0x300]
-    shl eax, 16
-    mov al, [rbp+rbx+0x000]
-    mov ah, [rbp+rbx+0x100]
+    mov eax, [rbp+rbx*4]
     xor eax, r10d
     call round_h_step
     rol r11d, 4
 
     movzx ebx, r9b
-    mov [rbp+rbx+0x000], al
-    mov [rbp+rbx+0x100], ah
-    shr eax, 16
-    mov [rbp+rbx+0x200], al
-    mov [rbp+rbx+0x300], ah
-
+    mov [rbp+rbx*4], eax
     add r9d, 0x01010101
     jnc 2b
 
     add r8, 4
     jnz 1b
 
-exit:
     pop rbx
     pop rbp
     ret
