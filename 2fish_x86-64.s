@@ -236,23 +236,22 @@ twofish_key:
     pop rbp # -> sboxes
 
     mov rcx, r8
-    sub r8, 4
     mov r11d, qselector
     rol r11d, cl
-    lea rsi, [rsi+r8*2] # pre-adjust rsi
+    lea rsi, [rsi+(r8-4)*2] # pre-adjust rsi
     neg r8
 
     # going to compute the sboxes incrementally, so first initialize
     xor r9d, r9d
-2:  mov eax, r9d
-    call round_h_step
-    rol r11d, 4
-    movzx ebx, r9b
-    mov [rbp+rbx*4], eax
-    add r9d, 0x01010101 
+2:  movzx ebx, r9b
+    mov [rbp+rbx*4], r9d
+    add r9d, 0x01010101
     jnc 2b
+    xor r10d, r10d
+    xor r9d, r9d
+    jmp 2f
 
-    # now, for each RS-codeword, apply a step of h
+    # for each RS-codeword, apply a step of h
 1:  shr r11d, 4
     mov eax, [rsi+r8*2]
     mov edx, [rsi+r8*2+4]
