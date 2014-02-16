@@ -73,8 +73,8 @@ mds:
 
 2:  xor dil, al
     mov bl, al
-    gf_shr bl, 0x169
-    shl r11d, 1
+    gf_shr bl, 0x169 # we could free up one register by using bh as tmp
+    shl r11d, 1      # (but that is a bad idea)
     cxor dil, bl
     gf_shr bl, 0x169
     shl r11d, 1
@@ -126,13 +126,13 @@ twofish_enc:
     xor r8, [rdx]
     xor r9, [rdx+8]
 
-    mov rsi, -16*8
-    sub rdx, rsi
-    add rdx, 32
+    mov esi, 16
+    lea rdx, [rdx+(rsi+4)*8]
+    neg rsi
 
-1:  round_F r9, r8, [rdx+rsi]
+1:  round_F r9, r8, [rdx+rsi*8]
     xchg r8, r9
-    add rsi, 8
+    inc rsi
     jnz 1b
 
     xor r9, [rdx-32*4-16]
@@ -178,25 +178,24 @@ round_h_step:
     jnz 1b
     ret
 
-# reduces edx:eax, clobbers: cx, r10, ebx
+# reduces edx:eax, clobbers: cx, bx ax, returns: edx
 .macro reedsolomon poly
 #  g(x) = x**4 + (a + 1/a) x**3 + a x**2 + (a + 1/a) x + 1
 local outer, inner
     mov cl, 0x88             # you should know what this is for by now
-    xor eax, edx             
     xor edx, eax
 outer:
-    xor eax, edx
+    xor edx, eax
 inner:
-    rol eax, 8               # rotate out byte
-    mov bh, al
-    gf_shr bh, 0x14D, bl     # bh = (1/a)
-    mov bl, al
-    gf_shl bl, 0x14D         # bl = (a)
+    rol edx, 8               # rotate out byte
+    mov bh, dl
+    gf_shr bh, 0x14D, ch     # bh = (1/a)
+    mov bl, dl
+    gf_shl bl, 0x14D, ch     # bl = (a)
     xor bh, bl               # bh = (a+1/a)
-    xor ah, bh               # (a+1/a)x
+    xor dh, bh               # (a+1/a)x
     shl ebx, 16
-    xor eax, ebx             # (a+1/a)x**3 + (a)x**2
+    xor edx, ebx             # (a+1/a)x**3 + (a)x**2
 
     shr cl, 1
     jnc inner
@@ -207,7 +206,7 @@ inner:
 twofish_key:
 # edi,rsi -> bits,masterkey
 # rdx,rcx -> roundkeys, sbox
-    push rbp
+    push r12
     push rbx
     push rcx
 
@@ -217,23 +216,23 @@ twofish_key:
     xor r9d, r9d
 
 1:  call round_h
-    mov ebp, edi
+    mov r12d, edi
     add rsi, 4
     call round_h
     sub rsi, 4
 
     rol edi, 8
-    pht ebp, edi
+    pht r12d, edi
     rol edi, 9
-    movzx rbx, r9b       # note: rbx upper bits zero'd for reedsolomon
-    mov [rdx+(rbx-2)*4], ebp
+    movzx rbx, r9b
+    mov [rdx+(rbx-2)*4], r12d
     mov [rdx+(rbx-2)*4+4], edi
 
     cmp r9b, 40
     jb 1b
 
     # round keys computed
-    pop rbp # -> sboxes
+    pop r12 # -> sboxes
 
     mov rcx, r8
     mov r11d, qselector
@@ -244,29 +243,29 @@ twofish_key:
     # going to compute the sboxes incrementally, so first initialize
     xor r9d, r9d
 2:  movzx ebx, r9b
-    mov [rbp+rbx*4], r9d
+    mov [r12+rbx*4], r9d
     add r9d, 0x01010101
     jnc 2b
-    xor r10d, r10d
-    xor r9d, r9d
-    jmp 2f
+
+    # jump-start the h-round loop
+    xor edx, edx
+    jmp 3f
 
     # for each RS-codeword, apply a step of h
 1:  shr r11d, 4
     mov eax, [rsi+r8*2]
     mov edx, [rsi+r8*2+4]
     reedsolomon 0x14D
-    mov r10d, eax
 
-    xor r9d, r9d
+3:  xor r9d, r9d
 2:  movzx ebx, r9b
-    mov eax, [rbp+rbx*4]
-    xor eax, r10d
+    mov eax, [r12+rbx*4]
+    xor eax, edx
     call round_h_step
     rol r11d, 4
 
     movzx ebx, r9b
-    mov [rbp+rbx*4], eax
+    mov [r12+rbx*4], eax
     add r9d, 0x01010101
     jnc 2b
 
@@ -274,7 +273,7 @@ twofish_key:
     jnz 1b
 
     pop rbx
-    pop rbp
+    pop r12
     ret
 
 # there's no point in pre-computing anything -- the qbox will still take up memory.
