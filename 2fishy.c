@@ -108,7 +108,7 @@ static word mds(word w)
     gf_matrix_mul(acc.byte, matrix, x.byte, 0x169, little_endian(), little_endian());
     return acc.word;
 #else
-    /* this takes the role of the matrix; 00b = 0x01, 01b = 11b = 0xEF */
+    /* this takes the role of the matrix; 00b = 0x01, 01b = 0x5B, 11b = 0xEF */
     word cw = little_endian()? 0x73c73d5c : 0x357cd3cd;
 
     vector x, acc = { 0 };
