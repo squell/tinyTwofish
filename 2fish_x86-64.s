@@ -161,7 +161,7 @@ twofish_enc:
 
 
 # control word for the qboxes
-.equ qselector, 0x5ca39000
+.equ qselector, 0x0009c53a
 
 # expects: word++ in r9d; r8: count rsi->key material; ecx: clobbers: ebx, r0, r11, rcx, rax
 round_h:
@@ -169,7 +169,7 @@ round_h:
     add r9d, 0x01010101
     mov rcx, r8
     mov r11d, qselector
-    rol r11d, cl
+    ror r11d, cl
     xor rbx, rbx
 
 2:  call round_h_step
@@ -183,7 +183,7 @@ round_h:
 # expects: rbx upper parts zero; r11d: control word
 round_h_step:
     mov dil, 4
-1:  ror r11d, 1
+1:  rol r11d, 1
     setc bh
     mov bl, al
     mov al, [qbox+rbx]
@@ -250,7 +250,7 @@ twofish_key:
 
     mov rcx, r8
     mov r11d, qselector
-    rol r11d, cl
+    ror r11d, cl
     lea rsi, [rsi+(r8-4)*2] # pre-adjust rsi
     neg r8
 
@@ -266,7 +266,7 @@ twofish_key:
     jmp 3f
 
     # for each RS-codeword, apply a step of h
-1:  shr r11d, 4
+1:  shl r11d, 4
     mov eax, [rsi+r8*2]
     mov edx, [rsi+r8*2+4]
     reedsolomon 0x14D
@@ -276,7 +276,7 @@ twofish_key:
     mov eax, [r12+rbx*4]
     xor eax, edx
     call round_h_step
-    rol r11d, 4
+    ror r11d, 4
 
     movzx ebx, r9b
     mov [r12+rbx*4], eax
