@@ -27,6 +27,9 @@
 # use a pre-computed table of halving in gf(2^8) in the MDS calc?
 gf_169_tab = 1
 
+# pre-compute the  key-dependent sboxes?
+sbox_tab = 0
+
 .global twofish_init, twofish_key, twofish_enc
 
 .text
@@ -56,6 +59,7 @@ gf_169_tab = 1
 
 # in: ax, out: di, clobbers: r10,r11,bx
 round_g:           # pass eax through the sboxes
+.if sbox_tab
     mov dil, 4
 1:  movzx ebx, al
     mov al, [rcx+rbx*4]
@@ -64,6 +68,25 @@ round_g:           # pass eax through the sboxes
     dec dil
     jnz 1b         # this loop has a (relatively) huge overhead. :)
     sub rcx, 4
+.else
+    # sbox is now: <qselector>|#iters, RSkey#1, RSkey#2, ...
+    mov r11d, [rcx]
+    movzx r10, r11b
+
+2:  mov dil, 4     # pass eax through the qboxes
+1:  movzx ebx, al
+    rol r11d, 1
+    setc bh
+    mov al, [qbox+rbx]
+    ror eax, 8
+    dec dil
+    jnz 1b
+
+    dec r10
+    jz mds
+    xor eax, [rcx+r10*4] # xor the RS-key
+    jmp 2b
+.endif
 
 /* the following code worked on the first attempt; which just proves that 
    asm forces you to pay attention, and paying attention means less bugs,
@@ -254,6 +277,7 @@ twofish_key:
     lea rsi, [rsi+(r8-4)*2] # pre-adjust rsi
     neg r8
 
+.if sbox_tab
     # going to compute the sboxes incrementally, so first initialize
     xor r9d, r9d
 2:  movzx ebx, r9b
@@ -285,6 +309,23 @@ twofish_key:
 
     add r8, 4
     jnz 1b
+.else
+    # store the qbox control word + key length info
+    mov r11b, cl 
+    shr r11b, 2
+    mov [r12], r11d
+
+    # store the rs-keys
+    lea r12, [r12+rcx]
+    add r8, 4
+1:  mov eax, [rsi+r8*2]
+    mov edx, [rsi+r8*2+4]
+    reedsolomon 0x14D
+    sub r12, 4
+    mov [r12], edx
+    add r8, 4
+    jnz 1b
+.endif
 
     pop rbx
     pop r12

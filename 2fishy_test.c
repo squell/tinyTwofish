@@ -47,6 +47,19 @@ void run(int bits)
     }
 }
 
+void bench(int bits, void *key) 
+{
+    sbox sbox;
+    schedule keys;
+    unsigned long i=0;
+    byte zero[16];
+
+    twofish_key(bits, key, keys, sbox);
+    while(i++ < 1000000) {
+	twofish_enc(zero,zero, keys, sbox);
+    }
+}
+
 int main(void) 
 {
     static byte zero[32];
@@ -65,6 +78,7 @@ int main(void)
     run(128);
     run(192);
     run(256);
+    bench(256, zero);
 
     return 0;
 }
