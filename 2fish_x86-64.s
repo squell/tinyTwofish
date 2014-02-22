@@ -31,13 +31,13 @@ mds_tab = 1
 gf_169_tab = 1
 
 # pre-compute the  key-dependent sboxes? (2=use big 8x32 sboxes)
-sbox_tab = 2
+sbox_tab = 0
 
 # use imul to speed up mds?
 imul_mds = 1
 
 # unroll the sbox lookup?
-unroll_sbox = 1
+unroll_sbox = 0
 
 .global twofish_init, twofish_key, twofish_enc
 
@@ -116,14 +116,8 @@ round_g:           # pass eax through the sboxes
     ror eax, 16
     .endr
     .else
-2:  mov dil, 4     # pass eax through the qboxes
-1:  movzx ebx, al
-    rol r11d, 1
-    setc bh
-    mov al, [qbox+rbx]
-    ror eax, 8
-    dec dil
-    jnz 1b
+    xor ebx, ebx
+2:  call round_h_step
     .endif
 
     dec r10
@@ -212,8 +206,8 @@ mds:
     dec r11d
     jnl 1b
 .endif
-
     ret
+
 
 .macro round_F dst, src, key
     mov eax, src&d
@@ -234,6 +228,7 @@ mds:
     shl dst, 32
     or dst, r12
 .endm
+
 
 #void twofish_enc(void *dest, void const *src, schedule const, sbox const)
 twofish_enc:
@@ -272,7 +267,7 @@ twofish_enc:
 # control word for the qboxes
 .equ qselector, 0x0009c53a
 
-# expects: word++ in r9d; r8: count rsi->key material; ecx: clobbers: ebx, r0, r11, rcx, rax
+# expects: word++ in r9d; r8: count rsi->key material; clobbers: rbx, r10, r11, rcx, rax
 round_h:
     mov eax, r9d
     add r9d, 0x01010101
