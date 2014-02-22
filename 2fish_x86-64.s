@@ -24,6 +24,9 @@
 .intel_syntax noprefix
 .altmacro
 
+# use a BIG lookuptable for the mds?
+mds_tab = 1
+
 # use a pre-computed table of halving in gf(2^8) in the MDS calc?
 gf_169_tab = 1
 
@@ -59,6 +62,19 @@ unroll_sbox = 1
 .macro gf_shr reg, poly, tmp=r10b
     shr reg, 1
     cxor reg, poly>>1, tmp
+.endm
+
+# if we're using big precomputed tables
+.macro box_8x32 table, dst
+    movzx ebx, al
+    mov dst, [table+(rbx+0x000)*4]
+    movzx ebx, ah
+    xor dst, [table+(rbx+0x100)*4]
+    ror eax, 16
+    movzx ebx, al
+    xor dst, [table+(rbx+0x200)*4]
+    movzx ebx, ah
+    xor dst, [table+(rbx+0x300)*4]
 .endm
 
 # NOTE: sbox layout is different from the C impl.
@@ -111,9 +127,17 @@ round_g:           # pass eax through the sboxes
     .endif
 
     dec r10
-    jz mds
+    jz 1f
     xor eax, [rcx+r10*4] # xor the RS-key
     jmp 2b
+1:
+.endif
+
+/* if the mds_tab option is used, the MDS is precomputed */
+
+.if mds_tab
+    box_8x32 mds_lut, edi
+    ret
 .endif
 
 /* the following code worked on the first attempt; which just proves that 
@@ -181,7 +205,7 @@ mds:
     imul r10d, ebx
     xor edi, r10d
 
-    shr eax, 8
+    ror eax, 8
     dec r11d
     jnl 1b
 .endif
@@ -256,7 +280,14 @@ round_h:
 
 2:  call round_h_step
     sub rcx, 4
+.if mds_tab
+    jnz 3f
+    box_8x32 mds_lut, edi
+    ret
+3:
+.else
     jz mds
+.endif
 
     xor eax, [rsi+(rcx-4)*2]
     jmp 2b
@@ -400,6 +431,26 @@ twofish_init:
     add cl, 1
     jnc 1b
 .endif
+.if mds_tab
+# in: ax, out: di, clobbers: r11,r10,bx
+    push rbx
+    xor r9d, r9d
+    xor ecx, ecx
+    inc ecx
+
+# pre-compute the MDS element-wise
+2:  xor eax, eax
+1:  call mds
+    mov [mds_lut+r9*4], edi
+    add eax, ecx
+    inc r9d
+    test r9b, r9b
+    jnz 1b
+    shl ecx, 8
+    jnz 2b
+
+    pop rbx
+.endif
     ret
 
 .data
@@ -426,6 +477,9 @@ imul_ef:
 .endif
 
 .bss
+.if mds_tab
+mds_lut: .space 256*4*4
+.endif
 .if gf_169_tab
 gf_169_shr: .space 256
 .endif
