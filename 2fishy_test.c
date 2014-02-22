@@ -47,15 +47,36 @@ void run(int bits)
     }
 }
 
-void bench(int bits, void *key) 
+void bench_agility(int bits, int runs) 
 {
     sbox sbox;
     schedule keys;
+    byte key[32];
     unsigned long i=0;
+
+    memset(key, 0, sizeof key);
+
+    while(i++ < 50000) {
+	int j;
+	twofish_key(bits, key,   keys, sbox);
+	for(j=runs; j--; )
+	    twofish_enc(key+16, key, keys, sbox);
+
+	twofish_key(bits, key,   keys, sbox);
+	for(j=runs; j--; )
+	    twofish_enc(key, key+16, keys, sbox);
+    }
+}
+
+void bench_throughput(int bits, void *key) 
+{
+    sbox sbox;
+    schedule keys;
     byte zero[16];
+    unsigned long i=0;
 
     twofish_key(bits, key, keys, sbox);
-    while(i++ < 1000000) {
+    while(i++ < 2500000) {
 	twofish_enc(zero,zero, keys, sbox);
     }
 }
@@ -78,7 +99,7 @@ int main(void)
     run(128);
     run(192);
     run(256);
-    bench(256, zero);
+    bench_agility(256, 1);
 
     return 0;
 }
