@@ -132,11 +132,16 @@ static word round_g(word w, sbox const sbox)
 {
     vector x;
     x.word = w;
+#ifndef SBOX32
     x.byte[0] = sbox[0x000|x.byte[0]];
     x.byte[1] = sbox[0x100|x.byte[1]];
     x.byte[2] = sbox[0x200|x.byte[2]];
     x.byte[3] = sbox[0x300|x.byte[3]];
     return mds(x.word);
+#else
+    return sbox[0x000|x.byte[0]] ^ sbox[0x100|x.byte[1]] ^
+           sbox[0x200|x.byte[2]] ^ sbox[0x300|x.byte[3]];
+#endif
 }
 
 static void round_F(word *out, word const *in, word const *keys, sbox const sbox)
@@ -256,10 +261,20 @@ void twofish_key(int bits, byte const *master_key, schedule keys, sbox sbox)
     for(n=0; n < 256; n++) {
 	vector x;
 	x.word = round_h(n*0x01010101, k, key_copy);
+#ifndef SBOX32
 	sbox[0x000|n] = x.byte[0];
 	sbox[0x100|n] = x.byte[1];
 	sbox[0x200|n] = x.byte[2];
 	sbox[0x300|n] = x.byte[3];
+#else
+	sbox[0x000|n] = mds(x.word);
+	x.byte[0] = 0;
+	sbox[0x000|n] ^= sbox[0x100|n] = mds(x.word);
+	x.byte[1] = 0;
+	sbox[0x100|n] ^= sbox[0x200|n] = mds(x.word);
+	x.byte[2] = 0;
+	sbox[0x200|n] ^= sbox[0x300|n] = mds(x.word);
+#endif
     }
 }
 

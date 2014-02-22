@@ -30,8 +30,8 @@ mds_tab = 1
 # use a pre-computed table of halving in gf(2^8) in the MDS calc?
 gf_169_tab = 1
 
-# pre-compute the  key-dependent sboxes?
-sbox_tab = 1
+# pre-compute the  key-dependent sboxes? (2=use big 8x32 sboxes)
+sbox_tab = 2
 
 # use imul to speed up mds?
 imul_mds = 1
@@ -81,7 +81,7 @@ unroll_sbox = 1
 
 # in: ax, out: di, clobbers: r10,r11,bx
 round_g:           # pass eax through the sboxes
-.if sbox_tab
+.if sbox_tab == 1
     .if unroll_sbox
     .irp i, 0,1
     movzx ebx, al
@@ -100,7 +100,7 @@ round_g:           # pass eax through the sboxes
     jnz 1b         # this loop has a (relatively) huge overhead. :)
     sub rcx, 4
     .endif
-.else
+.elseif sbox_tab == 0
     # sbox is now: <qselector>|#iters, RSkey#1, RSkey#2, ...
     mov r11d, [rcx]
     movzx r10, r11b
@@ -135,7 +135,10 @@ round_g:           # pass eax through the sboxes
 
 /* if the mds_tab option is used, the MDS is precomputed */
 
-.if mds_tab
+.if sbox_tab == 2
+    box_8x32 rcx, edi
+    ret
+.elseif mds_tab
     box_8x32 mds_lut, edi
     ret
 .endif
@@ -399,6 +402,33 @@ twofish_key:
 
     add r8, 4
     jnz 1b
+
+    .if sbox_tab > 1
+    # pass the computer sboxes through the MDS as well
+    # we're forced to use a different register assignment here
+
+    xor r9d, r9d
+2:  xor r8d, r8d
+    dec r8b      # r8 = 0xFF
+    mov edx, [r12+r9*4]
+
+1:  mov eax, edx
+    and eax, r8d
+    .if !mds_tab
+    call mds
+    .else
+    box_8x32 mds_lut, edi
+    ror eax, 16
+    .endif
+    mov [r12+r9*4], edi
+    add r9w, 0x100
+    shl r8d, 8
+    jnz 1b
+
+    sub r9w, 0x400
+    inc r9b
+    jnz 2b
+    .endif
 .else
     # store the qbox control word + key length info
     mov r11b, cl 
