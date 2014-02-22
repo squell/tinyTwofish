@@ -412,13 +412,15 @@ twofish_key:
     dec r8b      # r8 = 0xFF
     mov edx, [r12+r9*4]
 
-1:  mov eax, edx
-    and eax, r8d
     .if !mds_tab
+1:  mov eax, edx # re-use existing code
+    and eax, r8d
     call mds
     .else
-    box_8x32 mds_lut, edi
-    ror eax, 16
+1:  mov ebx, r9d
+    mov bl, dl
+    shr edx, 8
+    mov edi, [mds_lut+ebx*4]
     .endif
     mov [r12+r9*4], edi
     add r9w, 0x100

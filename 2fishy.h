@@ -34,7 +34,11 @@ typedef int static_assert_words_are_32bit[sizeof(word)==4?1:-1];
 #endif
 
 typedef word schedule[8+2*16];
+#ifdef SBOX32
+typedef word sbox[4*256];
+#else
 typedef byte sbox[4*256];
+#endif
 
 void twofish_init(void);
 void twofish_key(int bits, byte const *master_key, schedule, sbox);
