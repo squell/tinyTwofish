@@ -25,19 +25,19 @@
 .altmacro
 
 # use a BIG lookuptable for the mds?
-mds_tab = 1
+mds_tab = 0
 
 # use a pre-computed table of halving in gf(2^8) in the MDS calc?
 gf_169_tab = 1
 
-# pre-compute the  key-dependent sboxes? (2=use big 8x32 sboxes)
-sbox_tab = 0
+# pre-compute the  key-dependent sboxes? (2=big 8x32 sboxes, -1 no schedule!)
+sbox_tab = 1
 
 # use imul to speed up mds?
 imul_mds = 1
 
 # unroll the sbox lookup?
-unroll_sbox = 0
+unroll_sbox = 1
 
 .global twofish_init, twofish_key, twofish_enc
 
@@ -82,15 +82,15 @@ unroll_sbox = 0
 # in: ax, out: di, clobbers: r10,r11,bx
 round_g:           # pass eax through the sboxes
 .if sbox_tab == 1
-    .if unroll_sbox
-    .irp i, 0,1
+  .if unroll_sbox
+  .irp i, 0,1
     movzx ebx, al
     mov al, [rcx+(i*2+0)+rbx*4]
     movzx ebx, ah
     mov ah, [rcx+(i*2+1)+rbx*4]
     ror eax, 16
-    .endr
-    .else
+  .endr
+  .else
     mov dil, 4
 1:  movzx ebx, al
     mov al, [rcx+rbx*4]
@@ -99,26 +99,26 @@ round_g:           # pass eax through the sboxes
     dec dil
     jnz 1b         # this loop has a (relatively) huge overhead. :)
     sub rcx, 4
-    .endif
-.elseif sbox_tab == 0
+  .endif
+.elseif sbox_tab <= 0
     # sbox is now: <qselector>|#iters, RSkey#1, RSkey#2, ...
     mov r11d, [rcx]
     movzx r10, r11b
 
-    .if unroll_sbox
-2:  .rept 2
-    .irp reg, al, ah
+  .if unroll_sbox
+2:.rept 2
+  .irp reg, al, ah
     movzx ebx, reg
     rol r11d, 1
     setc bh
     mov reg, [qbox+rbx]
-    .endr
+  .endr
     ror eax, 16
-    .endr
-    .else
+  .endr
+  .else
     xor ebx, ebx
 2:  call round_h_step
-    .endif
+  .endif
 
     dec r10
     jz 1f
@@ -148,23 +148,23 @@ mds:
 .endif
 
 .if !imul_mds
-    mov r11d, 0x357cd3cd # encoding of the matrix
+    mov r11d, 0x357cd3cd # encoding of the matrix; 11=0xEF,01=5B,00=01
     xor edi, edi
 
 2:  xor dil, al
     mov bl, al
-.if gf_169_tab
+  .if gf_169_tab
     mov bl, [gf_169_shr+rbx]
-.else
+  .else
     gf_shr bl, 0x169
-.endif
+  .endif
     shl r11d, 1
     cxor dil, bl
-.if gf_169_tab
+  .if gf_169_tab
     mov bl, [gf_169_shr+rbx]
-.else
+  .else
     gf_shr bl, 0x169
-.endif
+  .endif
     shl r11d, 1
     cxor dil, bl
     ror eax, 8
@@ -178,26 +178,27 @@ mds:
     cmp r11d, -1
     jne 2b
 .else
+    /* trick: use the fast multiplier instead of huge lookuptables */
     xor edi, edi
     mov r11d, 3
 1:  mov bl, al
     imul r10d, ebx, 0x01010101
     xor edi, r10d
 
-.if gf_169_tab
+  .if gf_169_tab
     mov bl, [gf_169_shr+rbx]
-.else
+  .else
     gf_shr bl, 0x169
-.endif
+  .endif
     mov r10d, [imul_ef+r11*4]
     imul r10d, ebx
     xor edi, r10d
 
-.if gf_169_tab
+  .if gf_169_tab
     mov bl, [gf_169_shr+rbx]
-.else
+  .else
     gf_shr bl, 0x169
-.endif
+  .endif
     mov r10d, [imul_5b+r11*4]
     imul r10d, ebx
     xor edi, r10d
@@ -234,10 +235,11 @@ mds:
 twofish_enc:
     push r12
     push rbx
-    push rdi
 # rdi,rsi -> dst,src
 # rdx,rcx -> roundkeys, sbox
 
+.if sbox_tab >= 0
+    push rdi
     mov r8, [rsi]
     mov r9, [rsi+8] # rsi free.
 
@@ -262,6 +264,69 @@ twofish_enc:
     pop rbx
     pop r12
     ret
+.else
+    /* this computes the roundkeys on the fly; basically a combination of the
+       above (but using r13/r14) and the key-schedule code below. */
+    push r13
+    push r14
+    push rdi
+    mov r13, [rsi]
+    mov r14, [rsi+8] # rsi free.
+
+    mov rsi, rdx
+    mov rdx, rcx
+    xor r9d, r9d
+
+    movzx r8d, byte ptr [rdx]
+    lea r8d, [r8d*4]
+    call key_compute
+    xor r13, rdi
+    call key_compute
+    xor r14, rdi
+    add r9d, 0x04040404
+
+    sub rsp, 8
+1:  call key_compute
+    mov [rsp], rdi
+    mov rcx, rdx
+
+    round_F r14, r13, [rsp]
+    xchg r13, r14
+
+    cmp r9b, 40
+    jb 1b
+    add rsp, 8
+
+    mov r9d, 0x04040404
+    call key_compute
+    xor r14, rdi
+    call key_compute
+    xor r13, rdi
+    
+    pop rdi
+    mov [rdi], r14
+    mov [rdi+8], r13
+    pop r14
+    pop r13
+    pop rbx
+    pop r12
+    ret
+
+key_compute:
+    call round_h
+    mov r12d, edi
+    add rsi, 4
+    call round_h
+    sub rsi, 4
+
+    rol edi, 8
+    pht r12d, edi
+    rol edi, 9
+
+    shl rdi, 32
+    or rdi, r12
+    ret
+.endif
 
 
 # control word for the qboxes
@@ -274,7 +339,7 @@ round_h:
     mov rcx, r8
     mov r11d, qselector
     ror r11d, cl
-    xor rbx, rbx
+    xor ebx, ebx
 
 2:  call round_h_step
     sub rcx, 4
@@ -293,6 +358,17 @@ round_h:
 # passes a word through a series of qboxes
 # expects: rbx upper parts zero; r11d: control word
 round_h_step:
+.if unroll_sbox
+  .rept 2
+  .irp reg, al, ah
+    rol r11d, 1
+    setc bh
+    mov bl, reg
+    mov reg, [qbox+rbx]
+  .endr
+    ror eax, 16
+  .endr
+.else
     mov dil, 4
 1:  rol r11d, 1
     setc bh
@@ -301,6 +377,7 @@ round_h_step:
     ror eax, 8
     dec dil
     jnz 1b
+.endif
     ret
 
 # reduces edx:eax, clobbers: cx, bx ax, returns: edx
@@ -338,6 +415,7 @@ twofish_key:
     # compute round-keys first
     shr edi, 6
     lea r8, [(rdi+1)*4]   # free: rdi
+.if sbox_tab >= 0
     xor r9d, r9d
 
 1:  call round_h
@@ -355,6 +433,15 @@ twofish_key:
 
     cmp r9b, 40
     jb 1b
+.else
+    # simply copy the master key
+    push rsi 
+    mov ecx, edi
+    cld
+    mov rdi, rdx
+    rep movsq
+    pop rsi
+.endif
 
     # round keys computed
     pop r12 # -> sboxes
@@ -365,7 +452,7 @@ twofish_key:
     lea rsi, [rsi+(r8-4)*2] # pre-adjust rsi
     neg r8
 
-.if sbox_tab
+.if sbox_tab > 0
     # going to compute the sboxes incrementally, so first initialize
     xor r9d, r9d
 2:  movzx ebx, r9b
@@ -398,7 +485,7 @@ twofish_key:
     add r8, 4
     jnz 1b
 
-    .if sbox_tab > 1
+  .if sbox_tab > 1
     # pass the computer sboxes through the MDS as well
     # we're forced to use a different register assignment here
 
@@ -425,7 +512,7 @@ twofish_key:
     sub r9w, 0x400
     inc r9b
     jnz 2b
-    .endif
+  .endif
 .else
     # store the qbox control word + key length info
     mov r11b, cl 
