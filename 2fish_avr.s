@@ -311,6 +311,8 @@ loop:
 /* you are not required to understand this */
 .equ twofish_cookie, (0b10100110<<((288-KEY_SIZE)/42))&0xFF
 
+.equ twofish_reserve, KEY_SIZE/16 + 40*4*TAB_key
+
 .macro round_h dst, src, step=8+0
 #? Y -> key material
 local loop, start, k128, k192
@@ -366,7 +368,6 @@ start:
 .if UNROLL_round_g
     ldi r31, hi8(qbox)
 .endif
-    ldi poly, MDS_POLY>>1
 .endm
 
 /* uses r0..r3 as working area */
@@ -375,11 +376,14 @@ start:
 local i, loop
 .if UNROLL_round_g
     round_h 0, src, <8+ofs>
-    mds_columni out, r0, poly, <0x01,0x5B,0xEF,0xEF>, mov
-    mds_columni out, r1, poly, <0xEF,0xEF,0x5B,0x01>
-    mds_columni out, r2, poly, <0x5B,0xEF,0x01,0xEF>
-    mds_columni out, r3, poly, <0x5B,0x01,0xEF,0x5B>
+    ldi r30, MDS_POLY>>1
+    mds_columni out, r0, r30, <0x01,0x5B,0xEF,0xEF>, mov
+    mds_columni out, r1, r30, <0xEF,0xEF,0x5B,0x01>
+    mds_columni out, r2, r30, <0x5B,0xEF,0x01,0xEF>
+    mds_columni out, r3, r30, <0x5B,0x01,0xEF,0x5B>
 .else
+    push X_L ;( we are out of registers.
+    ldi X_L, MDS_POLY>>1
     ; an encoding of the MDS matrix
     .irp controlword, 0b01001101, 0b10101011, 0b00110111, 0b11001110
     ldi r30, controlword
@@ -393,9 +397,10 @@ loop:
     clr r31
     ld r0, Z+
     pop r31
-    mds_column out, r0, poly, r31
+    mds_column out, r0, X_L, r31
     cpi r30, 4
     brlo loop
+    pop X_L
 .endif
 .endm
 
@@ -465,6 +470,8 @@ one of the feistel half isn't any better.
  * Y -> pointer to *end* of master key
  *      (really, this makes a lot of sense)
  * X -> holding area for key material
+ * ---
+ * X -> *end* of key material
  */
 
 twofish_key:
@@ -522,10 +529,14 @@ main:
     la Y, .data
     copy Y, KEY_SIZE/8
     rcall twofish_key
-    dump ld .data+32+16
+    sbiw X_L, twofish_reserve/2
+    sbiw X_L, twofish_reserve/2
     cli
     sleep
+    dump ld .data+32+16
     .size main, .-.text
+
+CODE_END = .
 
 .balign 512
 qbox:
@@ -563,6 +574,8 @@ qbox:
     .byte 0x22, 0xc9, 0xc0, 0x9b, 0x89, 0xd4, 0xed, 0xab, 0x12, 0xa2, 0x0d, 0x52, 0xbb, 0x02, 0x2f, 0xa9 
     .byte 0xd7, 0x61, 0x1e, 0xb4, 0x50, 0x04, 0xf6, 0xc2, 0x16, 0x25, 0x86, 0x56, 0x55, 0x09, 0xbe, 0x91
 
+PROGRAM_END = .
+
 mkey:
 .byte 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef
 .byte 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10
@@ -573,4 +586,3 @@ skey:
 rkey:
 .int 0x52C54DDE,0x11F0626D,0x7CAC9D4A,0x4D1B4AAA,0xB7B83A10,0x1E7D0BEB,0xEE9C341F,0xCFE14BE4,0xF98FFEF9,0x9C5B3C17,0x15A48310,0x342A4D81,0x424D89FE,0xC14724A7,0x311B834C,0xFDE87320,0x3302778F,0x26CD67B4,0x7A6C6362,0xC2BAF60E,0x3411B994,0xD972C87F,0x84ADB1EA,0xA7DEE434,0x54D2960F,0xA2F7CAA8,0xA6B8FF8C,0x8014C425,0x6A748D1C,0xEDBAF720,0x928EF78C,0x0338EE13,0x9949D6BE,0xC8314176,0x07C07D68,0xECAE7EA7,0x1FE71844,0x85C05C89,0xF298311E,0x696EA672
 
-PROGRAM_END = .
