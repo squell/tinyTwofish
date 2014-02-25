@@ -30,7 +30,7 @@ MDS_POLY = 0x169
 RS_POLY  = 0x14D
 
 UNROLL_round_h = 0
-UNROLL_round_g = 1
+UNROLL_round_g = 0
 INLINE_mds = 1 ; TODO
 TAB_key = 1
 
@@ -362,7 +362,9 @@ start:
 .endm
 
 .macro round_g_init poly
-.if !UNROLL_round_g
+.if UNROLL_round_g
+    ldi r31, hi8(qbox)
+.else
     ; an encoding of the MDS matrix
     ; TODO FIXME analyse available registers
     ldi r16, 0b11001110
@@ -371,8 +373,6 @@ start:
     ldi r19, 0b01001101
 .endif
     ldi poly, MDS_POLY>>1
-    ldi r31, hi8(qbox)
-    clr r29 ; SMELL TODO
 .endm
 
 /* uses r0..r3 as working area */
@@ -387,12 +387,13 @@ local i, loop
     mds_columni out, r3, poly, <0x5B,0x01,0xEF,0x5B>
 .else
     quad clr out
-    clr r28      ; use Y to access the register file CANT DO THAT
+    clr r31      ; use Z to access the register file
+    clr r30      
 loop:
-    ldd r30, Y+16
-    ld r0, Y+
+    ldd r25, Z+16
+    ld r0, Z+
     mds_column out, r0, poly, r30
-    cpi r28, 4
+    cpi r30, 4
     brlo loop
 .endif
 .endm
@@ -419,7 +420,8 @@ loop:
 .endif
     ; we now have two intermediate results in kreg, kreg+4
     pht kreg, kreg+4, 3
-    rol1q kreg+4, r29
+    clr r30
+    rol1q kreg+4, r30
     ; note that the second key is still 'unrotated' by 16bits
 .endm
 
@@ -428,6 +430,7 @@ register allocation plan:
  r0.. r3: work area (for MDS in particular)
  r4.. r7,r8..r11: feistel half
  r12..       r19: other half
+ r20..       r28: data
 
 round-keys: add in from memory; there is not enough room, and saving
 one of the feistel half isn't any better. 
