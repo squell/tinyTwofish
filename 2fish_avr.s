@@ -29,10 +29,10 @@ KEY_SIZE = 256
 MDS_POLY = 0x169
 RS_POLY  = 0x14D
 
-UNROLL_round_h = 1
+UNROLL_round_h = 0
 UNROLL_round_g = 1
 INLINE_mds = 1 ; TODO
-TAB_key = 0    ; TODO
+TAB_key = 1
 
 X_L  = 26
 X_H  = 27
@@ -101,19 +101,38 @@ SREG = 0x3f
 .endif
 .endm
 
-.macro eorldq a, M, load=ld, tmp=r30
-.exitm;TODO remove me
+.macro eorlddq a, M, tmp=r30
 .irp i, 0,1,2,3
-    load tmp, M&+
+    ldd tmp, M+i
     eor a+i, tmp
 .endr
 .endm
 
-.macro addldq a, M, load=ld, tmp=r30
-    load tmp, M&+
+/* do some macro hacking to find the directionality */
+.macro eorldq a, M, tmp=r30
+.irpc c, M
+.ifc <c>, <+>
+    .irp i, 0,1,2,3
+	ld tmp, M
+	eor a+i, tmp
+    .endr
+    .exitm
+.endif
+.ifc <c>, <->
+    .irp i, 3,2,1,0
+	ld tmp, M
+	eor a+i, tmp
+    .endr
+    .exitm
+.endif
+.endr
+.endm
+
+.macro addldq a, M, tmp=r30, load=ld
+    load tmp, M
     add a, tmp
 .irp i, 1,2,3
-    load tmp, M&+
+    load tmp, M
     adc a+i, tmp
 .endr
 .endm
@@ -289,47 +308,54 @@ loop:
 .endm
 
 /* you are not required to understand this */
-.equ twofish_cookie, (0b10100110*(256-KEY_SIZE)/16)&0xFF
+.equ twofish_cookie, (0b10100110<<((288-KEY_SIZE)/42))&0xFF
 
-.macro round_h dst, src
-#? X -> key material
+.macro round_h dst, src, step=8+0
+#? Y -> key material
 local loop, start, k128, k192
 .if UNROLL_round_h
 .if KEY_SIZE > 192
     qxlati dst, <1,0,0,1>, src
-    eorldq dst, X, r30
-    qxlati dst, <1,1,0,0> 
-    eorldq dst, X, r30
+    eorlddq dst, Y+3*step, r30      ; note: step is textually substituted
+    qxlati dst, <1,1,0,0>           ; (this is hacky, but it works)
+    eorlddq dst, Y+2*step, r30
     qxlati dst, <0,1,0,1>
 .elseif KEY_SIZE > 128
     qxlati dst, <1,1,0,0>, src
-    eorldq dst, X, r30
+    eorlddq dst, Y+2*step, r30
     qxlati dst, <0,1,0,1>
 .else
     qxlati dst, <0,1,0,1>, src
 .endif
-    eorldq dst, X, r30
+    eorlddq dst, Y+1*step, r30
     qxlati dst, <0,0,1,1> 
-    eorldq dst, X, r30
+    eorlddq dst, Y+0*step, r30       ; again: textual substitution! 
     qxlati dst, <1,0,1,0> 
 .else
+#? requires key to not straddle a 256-page
+    ; step now a register: contains 24 if 8 byte strides, 25 if offset, 16 if 4-byte strides
 .ifnc <dst>, <src>
     movq dst, src
 .endif
-    ldi r28, twofish_cookie
-    ldi r31, hi8(qbox)
+    ldi r24, step*0-4                ; abuse of textual substitution
+    adiw Y_L, KEY_SIZE/8 + 0*step    ; abuse of textual substitution
+    ldi r25, twofish_cookie
     rjmp start
 loop:
-    eorldq dst, X, tmp
+    sub Y_L, r24
+    eorldq dst, -Y, r30
 start:
-    qxlat dst, r28, <7,4,6,5>
-    lsl r28             ; magic
+    qxlat dst, r25, <7,4,6,5>
+    lsl r25             ; magic
     brcc loop           
 .if KEY_SIZE > 128
     brhs loop
 .if KEY_SIZE > 192
-    lsl r28
+    lsl r25
     brne loop
+.if 0*step
+    sbiw Y_L, 0*step   
+.endif
 .endif
 .endif
 .endif                      
@@ -346,14 +372,14 @@ start:
 .endif
     ldi poly, MDS_POLY>>1
     ldi r31, hi8(qbox)
-    clr r29
+    clr r29 ; SMELL TODO
 .endm
 
 /* uses r0..r3 as working area */
-.macro round_g out, src, poly, rot=0
-#? X -> key material
+.macro round_g out, src, poly, ofs=0
+#? Y -> key material
 local i, loop
-    round_h 0, src
+    round_h 0, src, <8+ofs>
 .if UNROLL_round_g
     mds_columni out, r0, poly, <0x01,0x5B,0xEF,0xEF>, mov
     mds_columni out, r1, poly, <0xEF,0xEF,0x5B,0x01>
@@ -361,7 +387,7 @@ local i, loop
     mds_columni out, r3, poly, <0x5B,0x01,0xEF,0x5B>
 .else
     quad clr out
-    clr r28      ; use Y to access the register file
+    clr r28      ; use Y to access the register file CANT DO THAT
 loop:
     ldd r30, Y+16
     ld r0, Y+
@@ -372,13 +398,13 @@ loop:
 .endm
 
 .macro keypair kreg, num, poly
-#? X -> key material
+#? Y -> key material
 local i, loop, exit
 .if UNROLL_round_g
-    .irp dst, kreg, kreg+4
+    .irp ofs, 0, 4
     quad mov 0, num
     inc num
-    round_g dst, 0, poly
+    round_g kreg+ofs, 0, poly, ofs
     .endr
 .else
 loop:
@@ -386,8 +412,10 @@ loop:
     quad mov 0, num
     inc num
     round_g kreg+4, 0, poly
+    adiw Y_L, 4
     sbrc num, 0
     rjmp loop
+    sbiw Y_L, 8
 .endif
     ; we now have two intermediate results in kreg, kreg+4
     pht kreg, kreg+4, 3
@@ -415,8 +443,8 @@ one of the feistel half isn't any better.
     round_g tmp+4, in+7, poly
     pht tmp, tmp+4
 .if TAB_key
-    addldq tmp, Y
-    addldq tmp+4, Y
+    addldq tmp, Y+
+    addldq tmp+4, Y+
 .else
     .irp j, 0, 4
     pop r30
@@ -430,16 +458,16 @@ one of the feistel half isn't any better.
 .endm
 
 /*
- * X -> pointer to *end* of master key
+ * Y -> pointer to *end* of master key
  *      (really, this makes a lot of sense)
- * Y -> holding area for key material
+ * X -> holding area for key material
  */
 
 twofish_key:
     ldi r20, KEY_SIZE/64
-1:  reedsolomon -X
+1:  reedsolomon -Y
     .irp i, 0,1,2,3         ; order: stores the last sbox key first
-    st Y+, i
+    st X+, i
     .endr
     dec r20
     brne 1b
@@ -448,7 +476,7 @@ twofish_key:
     round_g_init r16
 1:  keypair 4, r17, r16
     .irp i, 0,1,2,3,6,7,4,5 ; fix the order of 2nd key
-    st Y+, (4+i)
+    st X+, (4+i)
     .endr
     cpi r17, 40
     brsh 2f                 ; TODO: relative jump when?
@@ -486,11 +514,11 @@ local i
 
 main:
     la Z, mkey
-    la X, .data
-    copy X, KEY_SIZE/8
-    la Y, .data+32
+    la X, .data+32
+    la Y, .data
+    copy Y, KEY_SIZE/8
     rcall twofish_key
-    dump ld .data+32
+    dump ld .data+32+16
     cli
     sleep
     .size main, .-.text
