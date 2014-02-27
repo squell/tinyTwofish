@@ -29,11 +29,18 @@ KEY_SIZE = 256
 MDS_POLY = 0x169
 RS_POLY  = 0x14D
 
-UNROLL_round_h = 1 ;; 
-UNROLL_round_g = 1
-UNROLL_keypair = 1
-UNROLL_enc     = 1
+/* options controlling various size vs. speed tradeoffs */
+UNROLL_round_h = 0
+UNROLL_round_g = 0
+UNROLL_keypair = 0
+UNROLL_enc     = 0
+UNROLL_swap    = 0
+
+/* precompute the roundkeys */
 TAB_key = 1
+
+/* should we "undo" the last swap? this is pointless; has no effect unless UNROLL_enc */
+UNDO_swap = 1
 
 .global twofish_key, twofish_enc
 
@@ -304,7 +311,7 @@ local i, loop, exit
 .if UNROLL_keypair
     .irp ofs, 0, 4
     quad mov 0, num
-    inc num
+    inc num            ; TODO not necessary the second time if TAB_key == 0
     round_g kreg+ofs, 0, <8+ofs>
     .endr
 .else
@@ -352,8 +359,7 @@ twofish_key:
     st X+, (4+i)
     .endr
     cpi r17, 40
-    breq 1f                 ; TODO: relative jump when?
-    rjmp 1b
+    loop ne, 1b
     movw Y_L, r20
 .else
     movw Y_L, X_L
@@ -377,14 +383,10 @@ Z -> in principal, used by sbox/qbox.
  */
 
 /* Note: when using "live keys": 
- * Z->key material, Y->SBoxkey
+ * [stack]->key material, Y->SBoxkey
  */
-.macro round_F num, out, in, tmp, setnum=mov
-.warning "num"
-.if TAB_key
-    push Z_L
-    push Z_H
-.else
+.macro round_F out, in, tmp
+.if !TAB_key
     keypair tmp, num
     quad push tmp,, <5,4,7,6,3,2,1,0>
 .endif
@@ -394,10 +396,12 @@ Z -> in principal, used by sbox/qbox.
     round_g tmp+4, in+7
     pht tmp, tmp+4
 .if TAB_key
-    pop Z_H
     pop Z_L
+    pop Z_H
     addldq tmp, Z+
     addldq tmp+4, Z+
+    push Z_H
+    push Z_L
 .else
     .irp j, 0, 4
     pop r30
@@ -415,6 +419,27 @@ Z -> in principal, used by sbox/qbox.
     eorq out+4, tmp+4
 .endm
 
+/* swap the feistal data. Recommend not using this! */
+.macro swap_halves a
+.if UNROLL_swap
+    .irp i, 0,1,2,3,4,5,6,7
+    mov r25, i+a
+    mov i+a, i+a+8
+    mov i+a+8, r25
+    .endr
+.else
+    ; rolled: 8 instr, 89 cycles
+    clr Z_H
+    ldi Z_L, a
+1:  ld r24, Z
+    ldd r25, Z+8
+    std Z+8, r24
+    st Z+, r25
+    cpi Z_L, a+8
+    brlo 1b
+.endif
+.endm
+
 /*
  * Y -> pointer to start of roundkey/end of RS-key
  * r4..r19: data to encrypt
@@ -423,16 +448,47 @@ Z -> in principal, used by sbox/qbox.
  */
 
 twofish_enc:
+.if TAB_key
     movw Z_L, Y_L
     .irp k, 4,8,12,16
     eorldq k, Z+
     .endr
-    sbiw Y_L, KEY_SIZE/16
     adiw Z_L, 16
-.if UNROLL_enc
-    round_F num, 12, 4, 20
-    round_F num, 4, 12, 20
+    push Z_H
+    push Z_L
 .endif
+    sbiw Y_L, KEY_SIZE/16        ; TODO optimise this away
+
+.if UNROLL_enc
+L_enc_loop:
+    round_F 12, 4, 20
+    round_F 4, 12, 20
+.else
+L_enc_loop:
+1:  round_F 12, 4, 20
+    push Z_L
+    swap_halves 4
+    pop Z_L
+.endif
+    sub Z_L, Y_L
+    cpi Z_L, 40*4+1        ; would like to have 'brle'
+    loop lo, L_enc_loop
+
+    adiw Y_L, 32
+.if UNROLL_enc && UNDO_swap
+    swap_halves 4
+.endif
+.if UNROLL_enc && !UNDO_swap
+    .irp k, 12,16,4,8
+    eorldq k, Y+
+    .endr
+.else
+    .irp k, 4,8,12,16
+    eorldq k, Y+
+    .endr
+.endif
+    pop Z_L
+    pop Z_H
     ret
     .size twofish_enc, .-twofish_enc
 
