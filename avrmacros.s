@@ -151,18 +151,26 @@ cp: lpm tmp, Z+
 .endif
 .endm
 
-/* can only be used for backjumps since gnu as is single-pass */
-.macro loop bit c, label
+/* A cute hack of the GNU as preprocessor: let the assembler, in the case of
+ * backjumps, figure out what sequence of opcodes to emit.
+ * Can only be used for backjumps since gnu as is single-pass 
+ */
+.macro loop cnd, label
 .if .-label < 128
-    brb&c bit, label
+    br&cnd label
 .else
-local skip
-    .ifc <c>, <s>
-    brbc bit, skip
-    .else
-    brbs bit, skip
-    .endif
+local skip, select
+select=0
+.irp case, lt,ge,lt,eq,ne,eq,lo,sh,cs,cc,cs,mi,pl,mi,vs,vc,vs,tc,ts,tc
+    .if select
+    br\case skip
     rjmp label
+    .exitm
+    .endif
+    .ifc <cnd>, <case>
+    select=1
+    .endif
+.endr
 skip:
 .endif
 .endm
