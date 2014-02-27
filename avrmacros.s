@@ -33,6 +33,16 @@ SP_H = 0x3e
 SP_L = 0x3d
 SREG = 0x3f
 
+; flags, for use with brbs
+CF=0
+ZF=1
+NF=2
+VF=3
+SF=4
+HF=5
+TF=6
+IF=7
+
 /* note: require all 32bit values to be 4-byte aligned, we can use a 
    wrap-around trick to get 8bit-rotations for free */
 
@@ -117,7 +127,7 @@ SREG = 0x3f
     adc a, null
 .endm
 
-.macro ror1q a, tmp=r30
+.macro ror1q a, tmp=r0
     mov tmp, a
     lsr tmp
 .irp i, 3,2,1,0
@@ -138,6 +148,22 @@ cp: lpm tmp, Z+
     st D&+, tmp
     dec cntr
     brne cp
+.endif
+.endm
+
+/* can only be used for backjumps since gnu as is single-pass */
+.macro loop bit c, label
+.if .-label < 128
+    brb&c bit, label
+.else
+local skip
+    .ifc <c>, <s>
+    brbc bit, skip
+    .else
+    brbs bit, skip
+    .endif
+    rjmp label
+skip:
 .endif
 .endm
 

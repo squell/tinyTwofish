@@ -29,23 +29,15 @@ KEY_SIZE = 256
 MDS_POLY = 0x169
 RS_POLY  = 0x14D
 
-UNROLL_round_h = 0
-UNROLL_round_g = 0
-UNROLL_keypair = 0
-INLINE_mds = 1 ; TODO
+UNROLL_round_h = 1 ;; 
+UNROLL_round_g = 1
+UNROLL_keypair = 1
+UNROLL_enc     = 1
 TAB_key = 1
 
-X_L  = 26
-X_H  = 27
-Y_L  = 28
-Y_H  = 29
-Z_L  = 30
-Z_H  = 31
-SP_H = 0x3e
-SP_L = 0x3d
-SREG = 0x3f
-
 .global twofish_key, twofish_enc
+
+.include "avrmacros.s"
 
 .text
 
@@ -53,107 +45,9 @@ SREG = 0x3f
     ldi r30, pm_lo8(main)
     ijmp 
 
-/* note: require all 32bit values to be 4-byte aligned, we can use a 
-   wrap-around trick to get 8bit-rotations for free */
-
-.macro quad op reg, arg, range=<0,1,2,3>
-.irp i, range
-.ifnc <>, <arg>
-    op (reg&&~3)+(reg+i)%4, arg
-.else
-    op (reg&&~3)+(reg+i)%4
-.endif
-.endr
-.endm
-
-.macro zip op rd, rr, range=<0,1,2,3>
-.irp i, range
-    op (rd&&~3)+(rd+i)%4, (rr&&~3)+(rr+i)%4
-.endr
-.endm
-
-.macro la M, ofs
-    ldi M&_L, lo8(ofs)
-    ldi M&_H, hi8(ofs)
-.endm
-
-.macro far call fun
-    ldi Z_L, pm_lo8(ofs)
-    ldi Z_H, pm_hi8(ofs)
-    call
-.endm
-
-.macro addq a, b
-    add a, b
-    zip adc a, b, <1,2,3>
-.endm
-
-.macro eorq a, b
-    zip eor a, b
-.endm
-
-.macro movq a, b
-.if (a%2)==0 && (b%2)==0
-    movw a, b
-    movw (a&&~3)+(a+2)%4, (b&&~3)+(b+2)%4
-.else 
-    ; we could save an instruction here by case analysis
-    zip mov a, b 
-.endif
-.endm
-
-.macro eorlddq a, M, tmp=r30
-.irp i, 0,1,2,3
-    ldd tmp, M+i
-    eor a+i, tmp
-.endr
-.endm
-
-/* do some macro hacking to find the directionality */
-.macro eorldq a, M, tmp=r30
-.irpc c, M
-.ifc <c>, <+>
-    .irp i, 0,1,2,3
-	ld tmp, M
-	eor a+i, tmp
-    .endr
-    .exitm
-.endif
-.ifc <c>, <->
-    .irp i, 3,2,1,0
-	ld tmp, M
-	eor a+i, tmp
-    .endr
-    .exitm
-.endif
-.endr
-.endm
-
-.macro addldq a, M, tmp=r30, load=ld
-    load tmp, M
-    add a, tmp
-.irp i, 1,2,3
-    load tmp, M
-    adc a+i, tmp
-.endr
-.endm
-
-.macro rol1q a, null=r0
-    addq a, a
-    adc a, null
-.endm
-
-.macro ror1q a, tmp=r30
-    mov tmp, a
-    lsr tmp
-.irp i, 3,2,1,0
-    ror a+i
-.endr
-.endm
-
-.macro pht a, b, rot=0
-    addq a, b+rot
-    addq b+rot, a
+.macro pht a, b
+    addq a, b
+    addq b, a
 .endm
 
 .macro gf_shl reg, poly
@@ -199,11 +93,11 @@ i=0
     .ifc <r>, <n/a>
     mov r30, d+i
     .else
-    mov r30, r+i
+    mov r30, (r&&~3)+(r+i)%4
     .endif
     load d+i, Z
     .endif
-    .set i, i+1
+    i=i+1
 .endr
     subi r31, 2*j-1
 .endr
@@ -224,7 +118,7 @@ i=0
     mov r30, r+i
     .endif
     load d+i, Z
-    .set i, i+1
+    i=i+1
 .endr
 .endm
 
@@ -238,7 +132,7 @@ i=0
     .if x >= val
     eor dst+i, src
     .endif
-    .set i, i+1
+    i=i+1
 .endr
 .endr
 .endm
@@ -313,7 +207,7 @@ loop:
 
 .equ twofish_reserve, KEY_SIZE/16 + 40*4*TAB_key
 
-.macro round_h dst, src, step=8+0
+.macro round_h dst, src, step=<8+0>
 #? Y -> key material
 local loop, start, k128, k192
 .if UNROLL_round_h
@@ -341,7 +235,7 @@ local loop, start, k128, k192
     movq dst, src
 .endif
     ldi r24, step*0-4                ; abuse of textual substitution
-    adiw Y_L, KEY_SIZE/8 + 0*step    ; abuse of textual substitution
+    adiw Y_L, (step*0)*KEY_SIZE/64 + 0*step ; again
     ldi r25, twofish_cookie
     rjmp start
 loop:
@@ -349,7 +243,7 @@ loop:
     eorldq dst, -Y, r30
 start:
     qxlat dst, r25, <7,4,6,5>
-    lsl r25             ; magic
+    lsl r25                          ; magic
     brcc loop           
 .if KEY_SIZE > 128
     brhs loop
@@ -364,106 +258,71 @@ start:
 .endif                      
 .endm
 
-.macro round_g_init poly
+.macro round_g_init
 .if UNROLL_round_g
     ldi r31, hi8(qbox)
 .endif
 .endm
 
 /* uses r0..r3 as working area */
-.macro round_g out, src, poly, ofs=0
+.macro round_g out, src, step=<4+0>
 #? Y -> key material
 local i, loop
 .if UNROLL_round_g
-    round_h 0, src, <8+ofs>
+    round_h 0, src, step
     ldi r30, MDS_POLY>>1
     mds_columni out, r0, r30, <0x01,0x5B,0xEF,0xEF>, mov
     mds_columni out, r1, r30, <0xEF,0xEF,0x5B,0x01>
     mds_columni out, r2, r30, <0x5B,0xEF,0x01,0xEF>
     mds_columni out, r3, r30, <0x5B,0x01,0xEF,0x5B>
 .else
-    push X_L ;( we are out of registers.
-    ldi X_L, MDS_POLY>>1
+    push Y_L ;( we are out of registers.
     ; an encoding of the MDS matrix
     .irp controlword, 0b01001101, 0b10101011, 0b00110111, 0b11001110
     ldi r30, controlword
     push r30
     .endr
     ldi r31, hi8(qbox)
-    round_h 0, src, <8+ofs>
+    round_h 0, src, step
     quad clr out
+    ldi Y_L, MDS_POLY>>1
     clr r30      ; uze Z to access the register file     
 loop:
     clr r31
     ld r0, Z+
     pop r31
-    mds_column out, r0, X_L, r31
+    mds_column out, r0, Y_L, r31
     cpi r30, 4
     brlo loop
-    pop X_L
+    pop Y_L
 .endif
 .endm
 
-.macro keypair kreg, num, poly
+.macro keypair kreg, num
 #? Y -> key material
 local i, loop, exit
 .if UNROLL_keypair
     .irp ofs, 0, 4
     quad mov 0, num
     inc num
-    round_g kreg+ofs, 0, poly, ofs
+    round_g kreg+ofs, 0, <8+ofs>
     .endr
 .else
 loop:
     movq kreg, kreg+4  ; no-op on the first pass
     quad mov 0, num
     inc num
-    round_g kreg+4, 0, poly
+    round_g kreg+4, 0, <8+0>
     adiw Y_L, 4
     sbrc num, 0
     rjmp loop
     sbiw Y_L, 8
 .endif
     ; we now have two intermediate results in kreg, kreg+4
-    pht kreg, kreg+4, 3
+    pht kreg, kreg+7
     clr r30
     rol1q kreg+4, r30
     ; note that the second key is still 'unrotated' by 16bits
-.endm
-
-/*
-register allocation plan:
- r0.. r3: work area (for MDS in particular)
- r4.. r7,r8..r11: feistel half
- r12..       r19: other half
- r20..       r27: data
-
-round-keys: add in from memory; there is not enough room, and saving
-one of the feistel half isn't any better. 
-
- */
-
-.macro round_F num, out, in, tmp, poly
-.ifne TAB_key
-    keypair tmp, num, poly
-    quad push tmp,, <5,4,7,6,3,2,1,0>
-.endif
-    round_g tmp,   in,   poly
-    round_g tmp+4, in+7, poly
-    pht tmp, tmp+4
-.if TAB_key
-    addldq tmp, Y+
-    addldq tmp+4, Y+
-.else
-    .irp j, 0, 4
-    pop r30
-    add tmp+j, r30
-    .irp i, 1,2,3
-    pop r30
-    adc tmp+j+i, r30
-    .endr
-    .endr
-.endif
 .endm
 
 /*
@@ -471,7 +330,9 @@ one of the feistel half isn't any better.
  *      (really, this makes a lot of sense)
  * X -> holding area for key material
  * ---
- * X -> *end* of key material
+ * Y -> *end* of RS-key, start of roundkeys
+ *
+ * All keys are stored in reverse order.
  */
 
 twofish_key:
@@ -483,34 +344,97 @@ twofish_key:
     dec r20
     brne 1b
 .if TAB_key
-    clr r17                 ; round number
-    round_g_init r16
-1:  keypair 4, r17, r16
+    movw r20, X_L
+    ldi r17, 0              ; round number
+    round_g_init
+1:  keypair 4, r17
     .irp i, 0,1,2,3,6,7,4,5 ; fix the order of 2nd key
     st X+, (4+i)
     .endr
     cpi r17, 40
-    brsh 2f                 ; TODO: relative jump when?
+    breq 1f                 ; TODO: relative jump when?
     rjmp 1b
-2:  
+    movw Y_L, r20
+.else
+    movw Y_L, X_L
+.endif
+1:  ret
+    .size twofish_key, .-twofish_key
+
+/*
+register allocation plan:
+ r0.. r3: work area (for MDS in particular)
+ r4.. r7,r8..r11: feistel half
+ r12..       r19: feistel half
+ r20..       r27: temporary
+
+round-keys: add in from memory; there is not enough room, and saving
+one of the feistel half isn't any better. 
+
+Y -> running key
+Z -> in principal, used by sbox/qbox. 
+
+ */
+
+/* Note: when using "live keys": 
+ * Z->key material, Y->SBoxkey
+ */
+.macro round_F num, out, in, tmp, setnum=mov
+.warning "num"
+.if TAB_key
+    push Z_L
+    push Z_H
+.else
+    keypair tmp, num
+    quad push tmp,, <5,4,7,6,3,2,1,0>
+.endif
+    la Z, qbox
+    round_g_init
+    round_g tmp, in
+    round_g tmp+4, in+7
+    pht tmp, tmp+4
+.if TAB_key
+    pop Z_H
+    pop Z_L
+    addldq tmp, Z+
+    addldq tmp+4, Z+
+.else
+    .irp j, 0, 4
+    pop r30
+    add tmp+j, r30
+    .irp i, 1,2,3
+    pop r30
+    adc tmp+j+i, r30
+    .endr
+    .endr
+.endif
+    eorq out, tmp
+    ror1q out
+    clr r0
+    rol1q out+4
+    eorq out+4, tmp+4
+.endm
+
+/*
+ * Y -> pointer to start of roundkey/end of RS-key
+ * r4..r19: data to encrypt
+ * ---
+ * r4..r19: encrypted block
+ */
+
+twofish_enc:
+    movw Z_L, Y_L
+    .irp k, 4,8,12,16
+    eorldq k, Z+
+    .endr
+    sbiw Y_L, KEY_SIZE/16
+    adiw Z_L, 16
+.if UNROLL_enc
+    round_F num, 12, 4, 20
+    round_F num, 4, 12, 20
 .endif
     ret
-
-.macro copy D, size, cntr=n/a, tmp=r0
-.ifc <n/a>, <cntr>
-    .rept size
-    lpm tmp, Z+
-    st D&+, tmp
-    .endr
-.else
-local cp
-    ldi cntr, size
-cp: lpm tmp, Z+
-    st D&+, tmp
-    dec cntr
-    brne cp
-.endif
-.endm
+    .size twofish_enc, .-twofish_enc
 
 .macro dump load org
 local i
@@ -524,17 +448,20 @@ local i
 .endm
 
 main:
+    cli 
     la Z, mkey
     la X, .data+32
     la Y, .data
     copy Y, KEY_SIZE/8
     rcall twofish_key
-    sbiw X_L, twofish_reserve/2
-    sbiw X_L, twofish_reserve/2
-    cli
+    .irp j, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+    clr 4+j
+    .endr
+    la Y, .data+32+16
+    rcall twofish_enc
+
     sleep
-    dump ld .data+32+16
-    .size main, .-.text
+    .size main, .-main
 
 CODE_END = .
 
@@ -581,6 +508,8 @@ mkey:
 .byte 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10
 .byte 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77
 .byte 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff
+zero:
+.space 32
 skey:
 .int 0, 0
 rkey:
