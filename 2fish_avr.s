@@ -39,7 +39,7 @@ UNROLL_swap    = 0
 INLINE_round_g = 1
 
 /* precompute the roundkeys */
-TAB_key = 1
+TAB_key = 0
 
 /* should we "undo" the last swap? this is pointless; has no effect unless UNROLL_enc */
 UNDO_swap = 1
@@ -218,7 +218,7 @@ loop:
 
 .macro round_h dst, src, step=<8+0>
 #? Y -> key material
-local loop, start, k128, k192
+local loop, start, k128, k192, stride, ofs
 .if UNROLL_round_h
 .if KEY_SIZE > 192
     qxlati dst, <1,0,0,1>, src
@@ -238,13 +238,19 @@ local loop, start, k128, k192
     eorlddq dst, Y+0*step, r30       ; again: textual substitution! 
     qxlati dst, <1,0,1,0> 
 .else
-#? requires key to not straddle a 256-page
+#? requires key to not straddle a 256-page boundary
     ; step now a register: contains 24 if 8 byte strides, 25 if offset, 16 if 4-byte strides
+    ; NOTE: r24 and r25 well get clobbered in actual use by round_g as called from round_F;
+    ; however, this will happen after they are needed here.
 .ifnc <dst>, <src>
     movq dst, src
 .endif
-    ldi r24, step*0-4                ; abuse of textual substitution
-    adiw Y_L, (step*0)*KEY_SIZE/64 + 0*step ; again
+.ifnc <step>, <r24>                  ; if r24, assume the called takes responsibility
+    ofs    = 0*step                  ; abusing the textual substitution here
+    stride = step*0
+    ldi r24, stride-4              
+    adiw Y_L, stride*KEY_SIZE/64 + ofs
+.endif
     ldi r25, twofish_cookie
     rjmp start
 loop:
@@ -259,8 +265,8 @@ start:
 .if KEY_SIZE > 192
     lsl r25
     brne loop
-.if 0*step
-    sbiw Y_L, 0*step   
+.if ofs
+    sbiw Y_L, ofs
 .endif
 .endif
 .endif
@@ -307,6 +313,16 @@ loop:
 .endif
 .endm
 
+/* Necessary to prevent instantiating round_g twice in round_F
+ * (using the 'shared' macro)
+ * (see below)
+ */
+.macro round_g_swap out, src
+    round_g out, src
+    swap_quad src, src+7
+    swap_quad out, out+4
+.endm
+
 .macro keypair kreg, num
 #? Y -> key material
 local i, loop, exit
@@ -348,19 +364,6 @@ keypair_f:
     sbiw Y_L, KEY_SIZE/16
     ret
 .endif
-
-/* Let the assembler do the deciding for us.
- */
-
-.macro shared_round_g tmp, in
-.ifndef round_g_f_&tmp_&in
-.subsection 1
-round_g_f_&tmp&_&in:
-    round_g tmp+4, in+7
-    ret
-.endif
-    rcall round_g_&tmp&_&in
-.endm
 
 /*
  * Y -> pointer to *end* of master key
@@ -434,10 +437,8 @@ local roll_start, roll_loop
     round_g tmp, in
     round_g tmp+4, in+7
 .else
-    ;swap_quad in, in+7
-    ;swap_quad tmp, tmp+4
-    shared_round_g tmp, in
-    shared_round_g tmp+4, in+7
+    shared round_g_swap, %tmp, %in
+    shared round_g_swap, %tmp, %in
 .endif
     pht tmp, tmp+4
 .if TAB_key
