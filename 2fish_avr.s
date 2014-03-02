@@ -36,6 +36,8 @@ UNROLL_keypair = 0
 UNROLL_enc     = 0
 UNROLL_swap    = 0
 
+INLINE_round_g = 1
+
 /* precompute the roundkeys */
 TAB_key = 1
 
@@ -148,7 +150,7 @@ i=0
    00 = 0x01
    01 = 0x5B
    11 = 0xEF */
-.macro mds_column dst, src, poly, coef
+.macro mds_column dst, src, poly, coef ; TODO FIXME unrolled variant?
     quad eor dst, src
 .irp val, 4,0
     gf_shr src, poly
@@ -159,7 +161,7 @@ i=0
 .endr
 .endm
 
-/* sacrifice all speed for a few bytes; currently BROKEN TODO */
+/* sacrifice all speed for a few bytes; currently BROKEN TODO/remove? */
 .macro mds_column_slow dst, src, poly, coef
 local not_EF, not_5B, loop
     ldi r28, dst
@@ -310,8 +312,8 @@ loop:
 local i, loop, exit
 .if UNROLL_keypair
     .irp ofs, 0, 4
-    quad mov 0, num
-    inc num            ; TODO not necessary the second time if TAB_key == 0
+    quad mov 0, num    ; TODO OPT if num=0, save 1 
+    inc num            ; TODO OPT not necessary the second time if TAB_key == 0
     round_g kreg+ofs, 0, <8+ofs>
     .endr
 .else
@@ -332,6 +334,34 @@ loop:
     ; note that the second key is still 'unrotated' by 16bits
 .endm
 
+/* In case TAB_key is 0, we need to compute roundkeys on the fly.
+ * This happens in multiple places, so best to make a function.
+ * Also this really causes register exhaustion. The only reason
+ * to want this if you are low on SRAM.
+ */
+
+.if !TAB_key     
+keypair_f:      
+    adiw Y_L, KEY_SIZE/16
+    round_g_init
+    keypair 20, r16
+    sbiw Y_L, KEY_SIZE/16
+    ret
+.endif
+
+/* Let the assembler do the deciding for us.
+ */
+
+.macro shared_round_g tmp, in
+.ifndef round_g_f_&tmp_&in
+.subsection 1
+round_g_f_&tmp&_&in:
+    round_g tmp+4, in+7
+    ret
+.endif
+    rcall round_g_&tmp&_&in
+.endm
+
 /*
  * Y -> pointer to *end* of master key
  *      (really, this makes a lot of sense)
@@ -350,8 +380,9 @@ twofish_key:
     .endr
     dec r20
     brne 1b
+
 .if TAB_key
-    movw r20, X_L
+    movw r20, X_L           ; save this position to return it to the caller as Y
     ldi r17, 0              ; round number
     round_g_init
 1:  keypair 4, r17
@@ -383,17 +414,31 @@ Z -> in principal, used by sbox/qbox.
  */
 
 /* Note: when using "live keys": 
- * [stack]->key material, Y->SBoxkey
+ * Y->key material, Y->SBoxkey
  */
 .macro round_F out, in, tmp
+local roll_start, roll_loop
 .if !TAB_key
-    keypair tmp, num
-    quad push tmp,, <5,4,7,6,3,2,1,0>
+    rcall keypair_f
+    ; swap r16 with top of stack
+    mov r30, r16
+    pop r16
+    push r30
+    .irp i, 5,4,7,6,3,2,1,0
+    push tmp+i
+    .endr
 .endif
-    la Z, qbox
+    ;la Z, qbox  ; TODO remove? FIXME FIXME
     round_g_init
+.if INLINE_round_g
     round_g tmp, in
     round_g tmp+4, in+7
+.else
+    ;swap_quad in, in+7
+    ;swap_quad tmp, tmp+4
+    shared_round_g tmp, in
+    shared_round_g tmp+4, in+7
+.endif
     pht tmp, tmp+4
 .if TAB_key
     pop Z_L
@@ -403,51 +448,66 @@ Z -> in principal, used by sbox/qbox.
     push Z_H
     push Z_L
 .else
-    .irp j, 0, 4
+.irp j, 0, 4
     pop r30
     add tmp+j, r30
     .irp i, 1,2,3
     pop r30
     adc tmp+j+i, r30
     .endr
-    .endr
+.endr
 .endif
     eorq out, tmp
     ror1q out
     clr r0
     rol1q out+4
     eorq out+4, tmp+4
+.if !TAB_key
+    ; switch back
+    mov r0, r16
+    pop r16
+    push r0
+.endif
 .endm
 
-/* swap the feistal data. Recommend not using this! */
+/* swap the feistel data. Recommend not using this! */
 .macro swap_halves a
+.if !TAB_key                      ; TODO OPT integrate below
+    mov r25, r16                  ; this is necessary since we steal r16
+    pop r16
+    push r8
+    mov r8, r25
+.endif
 .if UNROLL_swap
     .irp i, 0,1,2,3,4,5,6,7
-    mov r25, i+a
-    mov i+a, i+a+8
-    mov i+a+8, r25
+    xchg i+a, i+a+8, r25
     .endr
 .else
+local loop
     ; rolled: 8 instr, 89 cycles
     clr Z_H
     ldi Z_L, a
-1:  ld r24, Z
-    ldd r25, Z+8
-    std Z+8, r24
-    st Z+, r25
-    cpi Z_L, a+8
-    brlo 1b
+loop:
+    ld r25, Z
+    ldd r24, Z+8
+    std Z+8, r25
+    st Z+, r24
+    cpi Z_L, (a+8)&0xFF
+    brne loop
 .endif
 .endm
 
 /*
- * Y -> pointer to start of roundkey/end of RS-key
+ * Y -> pointer to start of (round)key/end of RS-key
  * r4..r19: data to encrypt
  * ---
  * r4..r19: encrypted block
  */
 
 twofish_enc:
+
+    ; pre-whitening
+
 .if TAB_key
     movw Z_L, Y_L
     .irp k, 4,8,12,16
@@ -457,38 +517,74 @@ twofish_enc:
     push Z_H
     push Z_L
 .endif
-    sbiw Y_L, KEY_SIZE/16        ; TODO optimise this away
+    sbiw Y_L, KEY_SIZE/16       ; TODO OPT can be avoided
+.if !TAB_key
+    .irp j, 4,12                ; TODO OPT we could save a few bytes by rolling this loop
+    push r16
+    ldi r16, (j-4)/4            ; round counter: overlaps with data; not ideal
+    rcall keypair_f
+    pop r16
+    zip eor j,   20
+    zip eor j+6, 24             ; remember: odd keys are unrotated.
+    .endr
+    push r16
+    ldi r16, 8
+.endif
+
+    ; core rounds
 
 .if UNROLL_enc
 L_enc_loop:
     round_F 12, 4, 20
     round_F 4, 12, 20
 .else
+    rjmp 1f
 L_enc_loop:
-1:  round_F 12, 4, 20
-    push Z_L
     swap_halves 4
-    pop Z_L
+1:  round_F 12, 4, 20
 .endif
+.if TAB_key
     sub Z_L, Y_L
-    cpi Z_L, 40*4+1        ; would like to have 'brle'
+    cpi Z_L, twofish_reserve
+.else
+    cpi r16, 40
+.endif
     loop lo, L_enc_loop
 
-    adiw Y_L, 32
 .if UNROLL_enc && UNDO_swap
     swap_halves 4
 .endif
-.if UNROLL_enc && !UNDO_swap
-    .irp k, 12,16,4,8
+
+    ; post-whitening
+
+.if TAB_key
+    adiw Y_L, 32                ; TODO OPT this can be avoided
+    .if UNROLL_enc && !UNDO_swap
+	.irp k, 12,16,4,8
     eorldq k, Y+
-    .endr
-.else
-    .irp k, 4,8,12,16
+	.endr
+    .else
+	.irp k, 4,8,12,16
     eorldq k, Y+
-    .endr
-.endif
+	.endr
+    .endif
     pop Z_L
     pop Z_H
+.else
+    .irp j, 4, 12 
+    .if UNDO_swap
+    ldi r16, 3+j/4
+    .else        
+    ldi r16, 7-j/4
+    .endif
+    rcall keypair_f
+    .if j==12
+    pop r16
+    .endif
+    eorq j, 20
+    eorq j+6, 24
+    .endr
+.endif
     ret
     .size twofish_enc, .-twofish_enc
 
@@ -503,23 +599,44 @@ local i
     ser r31
 .endm
 
+.macro qcompute reg, tmp=r0
+    mov tmp, reg    ; reg: a|b
+    andi tmp, 0xF   
+    swap tmp        ; tmp: b|_
+    xor reg, tmp
+    eor tmp, <a|_>  ; 
+    lsr reg         
+    andi reg, 0xF   ; reg: _|ror(b,4)^8a&0x10
+
+.endm
+
+FISH_END=.
+
 main:
     cli 
-    la Z, mkey
-    la X, .data+32
     la Y, .data
+    la Z, mkey
     copy Y, KEY_SIZE/8
+    la X, .data+32
     rcall twofish_key
-    .irp j, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
-    clr 4+j
-    .endr
-    la Y, .data+32+16
+    .if !TAB_key
+    movw X_L, Y_L
+    la Z, mkey
+    copy X, KEY_SIZE/8
+    .endif
+
+    la Z, 4
+    clr r0
+1:  st Z+, r0
+    cpi Z_L, 20
+    brlo 1b
+
     rcall twofish_enc
 
     sleep
     .size main, .-main
 
-CODE_END = .
+CODE_END=.
 
 .balign 512
 qbox:

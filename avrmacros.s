@@ -49,16 +49,16 @@ IF=7
 .macro quad op reg, arg, range=<0,1,2,3>
 .irp i, range
 .ifnc <>, <arg>
-    op (reg&&~3)+(reg+i)%4, arg
+    op ((reg)&~3)+((reg)+i)%4, arg
 .else
-    op (reg&&~3)+(reg+i)%4
+    op ((reg)&~3)+((reg)+i)%4
 .endif
 .endr
 .endm
 
 .macro zip op rd, rr, range=<0,1,2,3>
 .irp i, range
-    op (rd&&~3)+(rd+i)%4, (rr&&~3)+(rr+i)%4
+    op ((rd)&~3)+((rd)+i)%4, ((rr)&~3)+((rr)+i)%4
 .endr
 .endm
 
@@ -132,6 +132,18 @@ IF=7
     lsr tmp
 .irp i, 3,2,1,0
     ror a+i
+.endr
+.endm
+
+.macro xchg a, b, tmp=r0
+    mov tmp, a
+    mov a, b
+    mov b, tmp
+.endm
+
+.macro swap_quad a, b, tmp=r0
+.irp i, 0,1,2,3
+    xchg ((a)&~3)+((a)+i)%4, ((b)&~3)+((b)+i)%4, tmp
 .endr
 .endm
 
