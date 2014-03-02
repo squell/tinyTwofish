@@ -33,6 +33,16 @@
 avr_t * avr = NULL;
 avr_vcd_t vcd_file;
 
+void dump_avr(void) 
+{
+    printf("%10lld: ", avr->cycle);
+    for(int j=0; j < 1; j++) {
+	for(int i=0; i < 32; i++)
+	    printf("%02x ", avr->data[i+j*32]);
+	printf("\n");
+    }
+}
+
 int main(int argc, char *argv[])
 {
 	elf_firmware_t f;
@@ -61,13 +71,9 @@ int main(int argc, char *argv[])
 	printf( "\nDemo launching:\n");
 
 	int state = cpu_Running;
+	dump_avr();
 	while ((state != cpu_Done) && (state != cpu_Crashed)) {
 		state = avr_run(avr);
-		for(int j=0; j < 1; j++) {
-		    for(int i=0; i < 32; i++)
-			printf("%02x ", avr->data[i+j*32]);
-		    printf("\n");
-		}
-		printf("=======\n");
+		dump_avr();
 	}
 }
