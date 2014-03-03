@@ -199,17 +199,21 @@ skip:
  * getting this to be re-entrant is a bit of a hassle...
  */
 shared_subsection = 1024
-.macro shared op, out, in
-.ifndef I&op&_&out&_&in
+.macro shared op, a=,b,c=,d=
+.ifndef I&op&_&a&_&b&_&c&_&d&
 .pushsection .text             ; push a dummy section (wont accept an 'equ' here)
 .subsection shared_subsection  ; but it will accept it here?! 
 shared_subsection=shared_subsection+1
-I&op&_&out&_&in:
-    op out, in
+I&op&_&a&_&b&_&c&_&d&:
+    .ifc <c>, <>
+    op a, b
+    .else
+    op a, b, c, d
+    .endif
     ret
 .previous
 .popsection
 .endif
-    rcall I&op&_&out&_&in
+    rcall I&op&_&a&_&b&_&c&_&d&
 .endm
 
