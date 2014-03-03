@@ -51,10 +51,9 @@ UNDO_swap = 1
 .include "avrmacros.s"
 
 .text
+.subsection 1
 
-    ldi r31, pm_hi8(main)
-    ldi r30, pm_lo8(main)
-    ijmp 
+FISH_START=.
 
 .macro pht a, b
     addq a, b
@@ -152,39 +151,15 @@ i=0
    00 = 0x01
    01 = 0x5B
    11 = 0xEF */
-.macro mds_column dst, src, poly, coef ; TODO unrolled variant?
+.macro mds_column dst, src, poly, coef ; trying to 'roll' this barely gains anything
     quad eor dst, src
-.irp val, 4,0
+    .irp val, 4,0
     gf_shr src, poly
-.irp i, 0,1,2,3
+    .irp i, 0,1,2,3
     sbrc coef, val+i
     eor dst+i, src
-.endr
-.endr
-.endm
-
-/* sacrifice all speed for a few bytes */
-.macro mds_column_slow dst, src, poly, coef
-local not_EF, not_5B, loop
-    ldi r28, dst
-    clr r29
-    ldi r30, 4
-loop:
-    ld r2, Y
-    eor r2, src
-    mov r1, src
-    gf_shr r1, poly
-    lsl coef
-    brcc not_EF
-    eor r2, r1
-not_EF:
-    brhc not_5B
-    gf_shr r1, poly
-    eor r2, r1
-not_5B:
-    st Y+, r2
-    dec r30
-    brne loop
+    .endr
+    .endr
 .endm
 
 /* maintain the RS-state in r0..r3 */
@@ -223,8 +198,7 @@ loop:
 local loop, start, k128, k192, stride, ofs
 .if UNROLL_round_h
     .ifc <step>, <r24>
-    .warning "Incompatible: INLINE_round_g=0 but UNROLL_round_h=1"
-    .err
+    .error "Incompatible: INLINE_round_g=0 but UNROLL_round_h=1"
     .endif
 .if KEY_SIZE > 192
     qxlati dst, <1,0,0,1>, src
@@ -385,14 +359,12 @@ loop:
  * to want this if you are low on SRAM.
  */
 
-.if !TAB_key     
-keypair_f:      
-    adiw Y_L, KEY_SIZE/16 ; TODO FIXME OPT can go?
+.macro keypair_wrap kreg, num
     round_g_init
-    keypair 20, r16
+    adiw Y_L, KEY_SIZE/16 ; TODO FIXME OPT can go?
+    keypair kreg, num
     sbiw Y_L, KEY_SIZE/16
-    ret
-.endif
+.endm
 
 /*
  * Y -> pointer to *end* of master key
@@ -453,7 +425,7 @@ Z -> in principal, used by sbox/qbox.
 .macro round_F out, in, tmp
 local roll_start, roll_loop
 .if !TAB_key
-    rcall keypair_f
+    shared keypair_wrap, 20, r16
     ; swap r16 with top of stack
     mov r30, r16
     pop r16
@@ -556,7 +528,7 @@ twofish_enc:
     .irp j, 4,12                ; TODO OPT we could save a few bytes by rolling this loop
     push r16
     ldi r16, (j-4)/4            ; round counter: overlaps with data; not ideal
-    rcall keypair_f
+    shared keypair_wrap, 20, r16
     pop r16
     zip eor j,   20
     zip eor j+6, 24             ; remember: odd keys are unrotated.
@@ -611,7 +583,7 @@ L_enc_loop:
     .else        
     ldi r16, 7-j/4
     .endif
-    rcall keypair_f
+    shared keypair_wrap, 20, r16
     .if j==12
     pop r16
     .endif
@@ -644,10 +616,12 @@ local i
 
 .endm
 
-FISH_END=.
+.text 2048
+FISH_END = .-FISH_START
+
+.text
 
 main:
-    cli 
     la Y, .data
     la Z, mkey
     copy Y, KEY_SIZE/8
@@ -667,11 +641,11 @@ main:
 
     rcall twofish_enc
 
+    cli
     sleep
     .size main, .-main
 
-CODE_END=.
-
+.subsection 4096
 .balign 512
 qbox:
     .byte 0xa9, 0x67, 0xb3, 0xe8, 0x04, 0xfd, 0xa3, 0x76, 0x9a, 0x92, 0x80, 0x78, 0xe4, 0xdd, 0xd1, 0x38 
@@ -707,8 +681,6 @@ qbox:
     .byte 0x29, 0x2e, 0xac, 0x15, 0x59, 0xa8, 0x0a, 0x9e, 0x6e, 0x47, 0xdf, 0x34, 0x35, 0x6a, 0xcf, 0xdc 
     .byte 0x22, 0xc9, 0xc0, 0x9b, 0x89, 0xd4, 0xed, 0xab, 0x12, 0xa2, 0x0d, 0x52, 0xbb, 0x02, 0x2f, 0xa9 
     .byte 0xd7, 0x61, 0x1e, 0xb4, 0x50, 0x04, 0xf6, 0xc2, 0x16, 0x25, 0x86, 0x56, 0x55, 0x09, 0xbe, 0x91
-
-PROGRAM_END = .
 
 mkey:
 .byte 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef
