@@ -323,7 +323,9 @@ loop:
  * (see below)
  */
 .macro round_g_rot out, src
-    round_g out, src
+    ; assume the caller set r24
+    adiw Y_L, KEY_SIZE/16
+    round_g out, src, r24
     xchgq src, src+7
 .endm
 
@@ -332,14 +334,15 @@ loop:
 local i, loop, exit
 .if UNROLL_keypair
     .irp ofs, 0, 4
-    quad mov 0, num    ; TODO OPT if num=0, save 1 
-    inc num            ; TODO OPT not necessary the second time if TAB_key == 0
+    quad mov 0, num                   ; TODO OPT if num=0, save 1 
+    inc num                           ; TODO OPT not necessary the second time if TAB_key == 0
     .if INLINE_round_g
     round_g kreg+ofs, 0, <8+ofs>
     .else
-    ldi r24, 4         ; it's actually silly to combine these two options
-    adiw Y_L, KEY_SIZE/8 + ofs
-    round_g kreg+ofs, 0, r24
+    ldi r24, 4                        ; it's actually silly to combine these two options
+    adiw Y_L, KEY_SIZE/16 + ofs
+    round_g_rot kreg+ofs, 0           ; the rotation doesn't really harm us here
+    xchgq 0, 7 ; TODO FIXME this shouldn't be needed
     sbiw Y_L, ofs      
     .endif
     .endr
@@ -447,8 +450,10 @@ local roll_start, roll_loop
     round_g tmp, in
     round_g tmp+4, in+7
 .else
+    clr r24  ; set the 'step' for the round_g function to zero
     shared round_g_rot, %tmp+4, %in
     xchgq tmp, tmp+4
+    clr r24
     shared round_g_rot, %tmp+4, %in
 .endif
     pht tmp, tmp+4
