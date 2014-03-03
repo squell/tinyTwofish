@@ -47,13 +47,15 @@ int main(int argc, char *argv[])
 {
 	elf_firmware_t f;
 	const char * fname = argv[1]?argv[1]:"firmware.axf";
+	const char * mcu   = argv[1]&&argv[2]?argv[2]:"attiny85";
+	int debug = argc > 3;
 
 	printf("Firmware pathname is %s\n", fname);
 	elf_read_firmware(fname, &f);
 
 	printf("firmware %s f=%d mmcu=%s\n", fname, (int)f.frequency, f.mmcu);
 
-	avr = avr_make_mcu_by_name("attiny85");
+	avr = avr_make_mcu_by_name(mcu);
 	if (!avr) {
 		fprintf(stderr, "%s: AVR '%s' not known\n", argv[0], f.mmcu);
 		exit(1);
@@ -63,7 +65,7 @@ int main(int argc, char *argv[])
 
 	// even if not setup at startup, activate gdb if crashing
 	avr->gdb_port = 1234;
-	if (0) {
+	if (debug) {
 		avr->state = cpu_Stopped;
 		avr_gdb_init(avr);
 	}
@@ -74,6 +76,7 @@ int main(int argc, char *argv[])
 	dump_avr();
 	while ((state != cpu_Done) && (state != cpu_Crashed)) {
 		state = avr_run(avr);
-		dump_avr();
+		if(state == cpu_Running || state == cpu_Step)
+		    dump_avr();
 	}
 }
