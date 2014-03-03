@@ -29,17 +29,19 @@ KEY_SIZE = 256
 MDS_POLY = 0x169
 RS_POLY  = 0x14D
 
+/* we can share code between keysched. and encryption. should we? 
+   note that this is incompatible with 'UNROLL_round_h' */
+INLINE_round_g = 0
+
 /* options controlling various size vs. speed tradeoffs */
 UNROLL_round_h = 0
 UNROLL_round_g = 0
-UNROLL_keypair = 0
-UNROLL_enc     = 0
-UNROLL_swap    = 0
-
-INLINE_round_g = 1
+UNROLL_keypair = 1
+UNROLL_enc     = 1
+UNROLL_swap    = 1
 
 /* precompute the roundkeys */
-TAB_key = 0
+TAB_key = 1
 
 /* should we "undo" the last swap? this is pointless; has no effect unless UNROLL_enc */
 UNDO_swap = 1
@@ -239,17 +241,19 @@ local loop, start, k128, k192, stride, ofs
     qxlati dst, <1,0,1,0> 
 .else
 #? requires key to not straddle a 256-page boundary
-    ; step now a register: contains 24 if 8 byte strides, 25 if offset, 16 if 4-byte strides
-    ; NOTE: r24 and r25 well get clobbered in actual use by round_g as called from round_F;
-    ; however, this will happen after they are needed here.
+   ; r24 and r25 'are still free' at this point, because of the order of calls to round_g in round_F
+   ; they will always 'get overwritten later'. in case round_g is not inlined, the calls are carefully
+   ; crafted to still ensure this.
 .ifnc <dst>, <src>
     movq dst, src
 .endif
 .ifnc <step>, <r24>                  ; if r24, assume the called takes responsibility
-    ofs    = 0*step                  ; abusing the textual substitution here
+    ofs    = 0*step                  ; abusing the textual substitution here, again
     stride = step*0
     ldi r24, stride-4              
     adiw Y_L, stride*KEY_SIZE/64 + ofs
+.else
+    ofs = 0
 .endif
     ldi r25, twofish_cookie
     rjmp start
@@ -291,14 +295,15 @@ local i, loop
     mds_columni out, r2, r30, <0x5B,0xEF,0x01,0xEF>
     mds_columni out, r3, r30, <0x5B,0x01,0xEF,0x5B>
 .else
+    ldi r31, hi8(qbox)
+    round_h 0, src, step
+
     push Y_L ;( we are out of registers.
     ; an encoding of the MDS matrix
     .irp controlword, 0b01001101, 0b10101011, 0b00110111, 0b11001110
     ldi r30, controlword
     push r30
     .endr
-    ldi r31, hi8(qbox)
-    round_h 0, src, step
     quad clr out
     ldi Y_L, MDS_POLY>>1
     clr r30      ; uze Z to access the register file     
@@ -317,10 +322,9 @@ loop:
  * (using the 'shared' macro)
  * (see below)
  */
-.macro round_g_swap out, src
+.macro round_g_rot out, src
     round_g out, src
-    swap_quad src, src+7
-    swap_quad out, out+4
+    xchgq src, src+7
 .endm
 
 .macro keypair kreg, num
@@ -330,7 +334,14 @@ local i, loop, exit
     .irp ofs, 0, 4
     quad mov 0, num    ; TODO OPT if num=0, save 1 
     inc num            ; TODO OPT not necessary the second time if TAB_key == 0
+    .if INLINE_round_g
     round_g kreg+ofs, 0, <8+ofs>
+    .else
+    ldi r24, 4         ; it's actually silly to combine these two options
+    adiw Y_L, KEY_SIZE/8 + ofs
+    round_g kreg+ofs, 0, r24
+    sbiw Y_L, ofs      
+    .endif
     .endr
 .else
 loop:
@@ -358,7 +369,7 @@ loop:
 
 .if !TAB_key     
 keypair_f:      
-    adiw Y_L, KEY_SIZE/16
+    adiw Y_L, KEY_SIZE/16 ; TODO FIXME OPT can go?
     round_g_init
     keypair 20, r16
     sbiw Y_L, KEY_SIZE/16
@@ -431,14 +442,14 @@ local roll_start, roll_loop
     push tmp+i
     .endr
 .endif
-    ;la Z, qbox  ; TODO remove? FIXME FIXME
     round_g_init
 .if INLINE_round_g
     round_g tmp, in
     round_g tmp+4, in+7
 .else
-    shared round_g_swap, %tmp, %in
-    shared round_g_swap, %tmp, %in
+    shared round_g_rot, %tmp+4, %in
+    xchgq tmp, tmp+4
+    shared round_g_rot, %tmp+4, %in
 .endif
     pht tmp, tmp+4
 .if TAB_key
