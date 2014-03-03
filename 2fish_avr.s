@@ -36,17 +36,17 @@ INLINE_round_g = 0
 /* options controlling various size vs. speed tradeoffs */
 UNROLL_round_h = 0
 UNROLL_round_g = 0
-UNROLL_keypair = 1
-UNROLL_enc     = 1
-UNROLL_swap    = 1
+UNROLL_keypair = 0
+UNROLL_enc     = 0
+UNROLL_swap    = 0
 
 /* precompute the roundkeys */
-TAB_key = 1
+TAB_key = 0
 
 /* should we "undo" the last swap? this is pointless; has no effect unless UNROLL_enc */
 UNDO_swap = 1
 
-.global twofish_key, twofish_enc
+.global twofish_key, twofish_enc, twofish_reserve
 
 .include "avrmacros.s"
 
@@ -152,7 +152,7 @@ i=0
    00 = 0x01
    01 = 0x5B
    11 = 0xEF */
-.macro mds_column dst, src, poly, coef ; TODO FIXME unrolled variant?
+.macro mds_column dst, src, poly, coef ; TODO unrolled variant?
     quad eor dst, src
 .irp val, 4,0
     gf_shr src, poly
@@ -163,7 +163,7 @@ i=0
 .endr
 .endm
 
-/* sacrifice all speed for a few bytes; currently BROKEN TODO/remove? */
+/* sacrifice all speed for a few bytes */
 .macro mds_column_slow dst, src, poly, coef
 local not_EF, not_5B, loop
     ldi r28, dst
@@ -222,6 +222,10 @@ loop:
 #? Y -> key material
 local loop, start, k128, k192, stride, ofs
 .if UNROLL_round_h
+    .ifc <step>, <r24>
+    .warning "Incompatible: INLINE_round_g=0 but UNROLL_round_h=1"
+    .err
+    .endif
 .if KEY_SIZE > 192
     qxlati dst, <1,0,0,1>, src
     eorlddq dst, Y+3*step, r30      ; note: step is textually substituted
@@ -237,7 +241,7 @@ local loop, start, k128, k192, stride, ofs
 .endif
     eorlddq dst, Y+1*step, r30
     qxlati dst, <0,0,1,1> 
-    eorlddq dst, Y+0*step, r30       ; again: textual substitution! 
+    eorlddq dst, Y+0*step, r30
     qxlati dst, <1,0,1,0> 
 .else
 #? requires key to not straddle a 256-page boundary
@@ -247,7 +251,7 @@ local loop, start, k128, k192, stride, ofs
 .ifnc <dst>, <src>
     movq dst, src
 .endif
-.ifnc <step>, <r24>                  ; if r24, assume the called takes responsibility
+.ifnc <step>, <r24>                  ; if r24, assume the caller takes responsibility
     ofs    = 0*step                  ; abusing the textual substitution here, again
     stride = step*0
     ldi r24, stride-4              
@@ -331,31 +335,42 @@ loop:
 
 .macro keypair kreg, num
 #? Y -> key material
-local i, loop, exit
+local i, loop, exit, tmp            
 .if UNROLL_keypair
+    .if !INLINE_round_g
+    .warning "Ignoring INLINE_round_g in .macro keypair, because of UNROLL_keypair"
+    .endif
     .irp ofs, 0, 4
     quad mov 0, num                   ; TODO OPT if num=0, save 1 
     inc num                           ; TODO OPT not necessary the second time if TAB_key == 0
-    .if INLINE_round_g
     round_g kreg+ofs, 0, <8+ofs>
-    .else
-    ldi r24, 4                        ; it's actually silly to combine these two options
-    adiw Y_L, KEY_SIZE/16 + ofs
-    round_g_rot kreg+ofs, 0           ; the rotation doesn't really harm us here
-    xchgq 0, 7 ; TODO FIXME this shouldn't be needed
-    sbiw Y_L, ofs      
-    .endif
     .endr
 .else
+    .if !TAB_key && !INLINE_round_g
+    quad push 4                       ; !TAB_key is a annoying option
+    .endif
 loop:
-    movq kreg, kreg+4  ; no-op on the first pass
-    quad mov 0, num
+    tmp = 4*!INLINE_round_g           ; use r4 as source, to mimick round_F
+    movq kreg, kreg+4                 ; no-op on the first pass
+    quad mov tmp, num  
     inc num
-    round_g kreg+4, 0, <8+0>
+    .if INLINE_round_g
+    round_g kreg+4, tmp, <8+0>
+    .else
+    ldi r24, 4       
+    adiw Y_L, KEY_SIZE/16
+    shared round_g_rot, %kreg+4, %tmp
+	.if !TAB_key
+	movq tmp+7, tmp               ; partly undo the last swap
+	.endif
+    .endif
     adiw Y_L, 4
     sbrc num, 0
     rjmp loop
     sbiw Y_L, 8
+    .if !TAB_key && !INLINE_round_g
+    quad pop 4,, <3,2,1,0>
+    .endif
 .endif
     ; we now have two intermediate results in kreg, kreg+4
     pht kreg, kreg+7
@@ -399,16 +414,18 @@ twofish_key:
     brne 1b
 
 .if TAB_key
-    movw r20, X_L           ; save this position to return it to the caller as Y
-    ldi r17, 0              ; round number
+    movw r14, X_L           ; save this position to return it to the caller as Y
+    ldi r20, 40             ; all the 'good' registers could be occupied.
+    mov r13, r20
+    clr r12                 ; round number
     round_g_init
-1:  keypair 4, r17
+1:  keypair 16, r12         ; allocating on r16 means we can optimally share round_g (in some cases)
     .irp i, 0,1,2,3,6,7,4,5 ; fix the order of 2nd key
-    st X+, (4+i)
+    st X+, (16+i)
     .endr
-    cpi r17, 40
-    loop ne, 1b
-    movw Y_L, r20
+    cpse r12, r13           ; finally an excuse to use this instruction
+    rjmp 1b
+    movw Y_L, r14
 .else
     movw Y_L, X_L
 .endif
