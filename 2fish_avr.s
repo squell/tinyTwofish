@@ -25,26 +25,26 @@
 
 ; TODO FIXME WORK IN PROGRESS
 
-KEY_SIZE = 256
+KEY_SIZE = 128
 MDS_POLY = 0x169
 RS_POLY  = 0x14D
 
 /* we can share code between keysched. and encryption. should we? 
    note that this is incompatible with 'UNROLL_round_h' */
-INLINE_round_g = 0
+INLINE_round_g = 1
 
 /* options controlling various size vs. speed tradeoffs */
 UNROLL_round_h = 0
-UNROLL_round_g = 0
-UNROLL_keypair = 0
-UNROLL_enc     = 0
-UNROLL_swap    = 0
+UNROLL_round_g = 1
+UNROLL_keypair = 1
+UNROLL_enc     = 1
+UNROLL_swap    = 1
 
 /* precompute the roundkeys */
-TAB_key = 0
+TAB_key = 1
 
 /* should we "undo" the last swap? this is pointless; has no effect unless UNROLL_enc */
-UNDO_swap = 1
+UNDO_swap = 0
 
 .global twofish_key, twofish_enc, twofish_reserve
 
@@ -56,11 +56,13 @@ UNDO_swap = 1
 FISH_START=.
 
 .macro pht a, b
+.print "pht a, b"
     addq a, b
     addq b, a
 .endm
 
 .macro gf_shl reg, poly
+.print "gf_shl reg, poly"
 local skip
     lsl reg
     brcc skip
@@ -70,6 +72,7 @@ skip:
 
 /* poly must be pre-shifted */
 .macro gf_shr reg, poly
+.print "gf_shr reg, poly"
 local skip
     lsr reg
     brcc skip
@@ -152,6 +155,7 @@ i=0
    01 = 0x5B
    11 = 0xEF */
 .macro mds_column dst, src, poly, coef ; trying to 'roll' this barely gains anything
+.print "mds_column dst, src, poly, coef"
     quad eor dst, src
     .irp val, 4,0
     gf_shr src, poly
@@ -256,6 +260,7 @@ start:
 .endm
 
 .macro round_g_init
+.print "round_g_init"
 .if UNROLL_round_g
     ldi r31, hi8(qbox)
 .endif
@@ -301,6 +306,7 @@ loop:
  * (see below)
  */
 .macro round_g_rot out, src
+.print "round_g_rot out, src"
     ; assume the caller set r24
     adiw Y_L, KEY_SIZE/16
     round_g out, src, r24
@@ -308,6 +314,7 @@ loop:
 .endm
 
 .macro keypair kreg, num
+.print "keypair kreg, num"
 #? Y -> key material
 local i, loop, exit, tmp            
 .if UNROLL_keypair
@@ -315,8 +322,8 @@ local i, loop, exit, tmp
     .warning "Ignoring INLINE_round_g in .macro keypair, because of UNROLL_keypair"
     .endif
     .irp ofs, 0, 4
-    quad mov 0, num                   ; TODO OPT if num=0, save 1 
-    inc num                           ; TODO OPT not necessary the second time if TAB_key == 0
+    quad mov 0, num                   ; OPT if num=0, save 1 
+    inc num                           ; OPT not necessary the second time if TAB_key == 0
     round_g kreg+ofs, 0, <8+ofs>
     .endr
 .else
@@ -360,8 +367,9 @@ loop:
  */
 
 .macro keypair_wrap kreg, num
+.print "keypair_wrap kreg, num"
     round_g_init
-    adiw Y_L, KEY_SIZE/16 ; TODO FIXME OPT can go?
+    adiw Y_L, KEY_SIZE/16 ; TODO OPT can go?
     keypair kreg, num
     sbiw Y_L, KEY_SIZE/16
 .endm
@@ -423,6 +431,7 @@ Z -> in principal, used by sbox/qbox.
  * Y->key material, Y->SBoxkey
  */
 .macro round_F out, in, tmp
+.print "round_F out, in, tmp"
 local roll_start, roll_loop
 .if !TAB_key
     shared keypair_wrap, 20, r16
@@ -478,7 +487,8 @@ local roll_start, roll_loop
 
 /* swap the feistel data. Recommend not using this! */
 .macro swap_halves a
-.if !TAB_key                      ; TODO OPT integrate below
+.print "swap_halves a"
+.if !TAB_key                      ; OPT integrate below
     mov r25, r16                  ; this is necessary since we steal r16
     pop r16
     push r8
@@ -503,6 +513,11 @@ loop:
 .endif
 .endm
 
+.if !UNROLL_enc && UNDO_swap
+    .warning "Ignoring UNDO_swap since UNROLL_enc = 0"
+    UNDO_swap=0
+.endif
+
 /*
  * Y -> pointer to start of (round)key/end of RS-key
  * r4..r19: data to encrypt
@@ -510,6 +525,7 @@ loop:
  * r4..r19: encrypted block
  */
 
+; TODO: make two macro's to seperate the whitening stages from the main loop to make the code more readable
 twofish_enc:
 
     ; pre-whitening
@@ -523,9 +539,9 @@ twofish_enc:
     push Z_H
     push Z_L
 .endif
-    sbiw Y_L, KEY_SIZE/16       ; TODO OPT can be avoided
+    sbiw Y_L, KEY_SIZE/16       ; TODO OPT can be avoided?
 .if !TAB_key
-    .irp j, 4,12                ; TODO OPT we could save a few bytes by rolling this loop
+    .irp j, 4,12                ; OPT we could save a few bytes by rolling this loop
     push r16
     ldi r16, (j-4)/4            ; round counter: overlaps with data; not ideal
     shared keypair_wrap, 20, r16
@@ -557,14 +573,14 @@ L_enc_loop:
 .endif
     loop lo, L_enc_loop
 
-.if UNROLL_enc && UNDO_swap
+.if UNDO_swap
     swap_halves 4
 .endif
 
     ; post-whitening
 
 .if TAB_key
-    adiw Y_L, 32                ; TODO OPT this can be avoided
+    adiw Y_L, 32                ; TODO OPT this can be avoided?
     .if UNROLL_enc && !UNDO_swap
 	.irp k, 12,16,4,8
     eorldq k, Y+
@@ -595,6 +611,7 @@ L_enc_loop:
     .size twofish_enc, .-twofish_enc
 
 .macro dump load org
+.print "dump load org"
 local i
     la Z, org
     i=0
@@ -694,3 +711,5 @@ skey:
 rkey:
 .int 0x52C54DDE,0x11F0626D,0x7CAC9D4A,0x4D1B4AAA,0xB7B83A10,0x1E7D0BEB,0xEE9C341F,0xCFE14BE4,0xF98FFEF9,0x9C5B3C17,0x15A48310,0x342A4D81,0x424D89FE,0xC14724A7,0x311B834C,0xFDE87320,0x3302778F,0x26CD67B4,0x7A6C6362,0xC2BAF60E,0x3411B994,0xD972C87F,0x84ADB1EA,0xA7DEE434,0x54D2960F,0xA2F7CAA8,0xA6B8FF8C,0x8014C425,0x6A748D1C,0xEDBAF720,0x928EF78C,0x0338EE13,0x9949D6BE,0xC8314176,0x07C07D68,0xECAE7EA7,0x1FE71844,0x85C05C89,0xF298311E,0x696EA672
 
+.data
+blaat: .int 0x666
