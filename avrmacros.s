@@ -67,6 +67,12 @@ IF=7
     ldi M&_H, hi8(ofs)
 .endm
 
+.macro far xfer label
+    ldi Z_H, pm_hi8(label)
+    ldi Z_L, pm_lo8(label)
+    i&xfer
+.endm
+
 .macro addq a, b
     add a, b
     zip adc a, b, <1,2,3>
@@ -141,10 +147,12 @@ IF=7
     mov b, tmp
 .endm
 
-.macro swap_quad a, b, tmp=r0
+.macro xchgq a, b, tmp=r0
+.ifnc <a>, <b>
 .irp i, 0,1,2,3
     xchg ((a)&~3)+((a)+i)%4, ((b)&~3)+((b)+i)%4, tmp
 .endr
+.endif
 .endm
 
 .macro copy D, size, cntr=n/a, tmp=r0
@@ -185,5 +193,17 @@ select=0
 .endr
 skip:
 .endif
+.endm
+
+/* Use the assembler to perform a sort of crude 'template' instantiation */
+.macro shared op, out, in
+.ifndef I&op&_&out&_&in
+.subsection 1
+I&op&_&out&_&in:
+    op out, in
+    ret
+.previous
+.endif
+    rcall I&op&_&out&_&in
 .endm
 
