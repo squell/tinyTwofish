@@ -41,8 +41,8 @@ UNROLL_enc     = 1
 UNROLL_swap    = 1
 
 /* precompute the roundkeys */
-;TAB_key = 1
-TAB_sbox = 0
+TAB_key = 1
+TAB_sbox = 1
 
 /* should we "undo" the last swap? this is pointless; has no effect unless UNROLL_enc */
 UNDO_swap = 1
@@ -232,12 +232,13 @@ local loop, start, k128, k192, stride, ofs
     .ifnc <dst>, <src>
     movq dst, src
     .endif
-    .ifnc <step>, <r24>              ; if r24, assume the caller takes responsibility
-    ofs    = 0*step                  ; abusing the textual substitution here, again
+    .ifnc <step>, <r24>              ; if r24, assume the caller has set the skip-distance in r24
+    ofs    = 0*step                  ; and modified Y_L
     stride = step*0
     ldi r24, stride-4              
     adiw Y_L, stride*KEY_SIZE/64 + ofs
     .else
+    adiw Y_L, KEY_SIZE/16
     ofs = 0
     .endif
     ldi r25, twofish_cookie
@@ -320,7 +321,6 @@ loop:
 .macro round_g_rot out, src
 ;.print "round_g_rot out, src"
     ; assume the caller set r24
-    adiw Y_L, KEY_SIZE/16            ; TODO FIXME causes problems with SBOX_tab
     round_g out, src, r24
     xchgq src, src+7
 .endm
@@ -331,7 +331,7 @@ loop:
 ; MAYBE TODO: we could still share the MDS computation; but this is
 ; not a logical thing to want to do in both cases.
 
-.macro keypair kreg, num
+.macro keypair kreg, num, pos=0
 ;.print "keypair kreg, num"
 #? Y -> key material
 local i, loop, exit, tmp            
@@ -342,7 +342,7 @@ local i, loop, exit, tmp
     .irp ofs, 0, 4
     quad mov 0, num                   ; OPT if num=0, save 1 
     inc num                           ; OPT not necessary the second time if TAB_key == 0
-    round_g kreg+ofs, 0, <8+ofs>
+    round_g kreg+ofs, 0, <8+(pos+ofs)>
     .endr
 .else
     .if !TAB_key && !INLINE_round_g
@@ -354,16 +354,21 @@ loop:
     quad mov tmp, num  
     inc num
     .if INLINE_round_g || TAB_sbox
-    round_g kreg+4, tmp, <8+0>
+    round_g kreg+4, tmp, <8+pos>
+    adiw Y_L, 4
     .else
     ldi r24, 4       
-    adiw Y_L, KEY_SIZE/16
+    adiw Y_L, pos+KEY_SIZE/16
     shared round_g_rot, %kreg+4, %tmp
 	.if !TAB_key
 	movq tmp+7, tmp               ; partly undo the last swap
 	.endif
-    .endif
+    .if pos
+    sbiw Y_L, pos-4
+    .else
     adiw Y_L, 4
+    .endif
+    .endif
     sbrc num, 0
     rjmp loop
     sbiw Y_L, 8
@@ -387,9 +392,7 @@ loop:
 .macro keypair_wrap kreg, num
 ;.print "keypair_wrap kreg, num"
     round_g_init
-    adiw Y_L, KEY_SIZE/16 ; TODO OPT can go?
-    keypair kreg, num
-    sbiw Y_L, KEY_SIZE/16
+    keypair kreg, num, KEY_SIZE/16
 .endm
 
 /*
@@ -428,9 +431,9 @@ twofish_key:
 .else
     movw Y_L, X_L
 .endif
+    sbiw Y_L, KEY_SIZE/16
 
 .if TAB_sbox                ; precompute the sboxes.
-    sbiw Y_L, KEY_SIZE/16   ; OPT the convention for layout out keysched in memory is not that handy
     la X, sbox
     clr r20
     ldi r31, hi8(qbox)
@@ -444,7 +447,6 @@ twofish_key:
     subi X_H, 3
     inc r20
     loop ne 1b
-    adiw Y_L, KEY_SIZE/16
     TAB_sbox=1
 .endif
 
@@ -486,8 +488,6 @@ local roll_start, roll_loop
 .if INLINE_round_g
     round_g tmp, in
     round_g tmp+4, in+7
-cli
-sleep
 .else
     clr r24  ; set the 'step' for the round_g function to zero
     shared round_g_rot, %tmp+4, %in
@@ -579,6 +579,7 @@ twofish_enc:
 
 .if TAB_key
     movw Z_L, Y_L
+    adiw Z_L, KEY_SIZE/16
     .irp k, 4,8,12,16
     eorldq k, Z+
     .endr
@@ -586,7 +587,6 @@ twofish_enc:
     push Z_H
     push Z_L
 .endif
-    sbiw Y_L, KEY_SIZE/16       ; TODO OPT can be avoided?
 .if !TAB_key
     .irp j, 4,12                ; OPT we could save a few bytes by rolling this loop
     push r16
@@ -694,7 +694,7 @@ main:
     rcall twofish_key
 
     .if !TAB_key
-    movw X_L, Y_L
+    la X, schedule+KEY_SIZE/16
     la Z, _mkey
     copy X, KEY_SIZE/8
     .endif
