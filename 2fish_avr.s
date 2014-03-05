@@ -25,7 +25,7 @@
 
 ; TODO FIXME WORK IN PROGRESS
 
-KEY_SIZE = 128
+KEY_SIZE = 256
 MDS_POLY = 0x169
 RS_POLY  = 0x14D
 
@@ -34,17 +34,18 @@ RS_POLY  = 0x14D
 INLINE_round_g = 1
 
 /* options controlling various size vs. speed tradeoffs */
-UNROLL_round_h = 0
+UNROLL_round_h = 1
 UNROLL_round_g = 1
 UNROLL_keypair = 1
 UNROLL_enc     = 1
 UNROLL_swap    = 1
 
 /* precompute the roundkeys */
-TAB_key = 1
+;TAB_key = 1
+TAB_sbox = 0
 
 /* should we "undo" the last swap? this is pointless; has no effect unless UNROLL_enc */
-UNDO_swap = 0
+UNDO_swap = 1
 
 .global twofish_key, twofish_enc, twofish_reserve
 
@@ -56,13 +57,13 @@ UNDO_swap = 0
 FISH_START=.
 
 .macro pht a, b
-.print "pht a, b"
+;.print "pht a, b"
     addq a, b
     addq b, a
 .endm
 
 .macro gf_shl reg, poly
-.print "gf_shl reg, poly"
+;.print "gf_shl reg, poly"
 local skip
     lsl reg
     brcc skip
@@ -72,27 +73,12 @@ skip:
 
 /* poly must be pre-shifted */
 .macro gf_shr reg, poly
-.print "gf_shr reg, poly"
+;.print "gf_shr reg, poly"
 local skip
     lsr reg
     brcc skip
     eor reg, poly
 skip:
-.endm
-
-/* tables should be aligned on 256-byte boundary 
-   this macro can perform the rotation on the fly */
-.macro sxlat r, rotate=0, load=ld
-#?  ldi r31, hi8(table) 
-#?  ldi r29, hi8(table) 
-    mov r30, r+(4-rotate/8)%4
-    mov r28, r+(1-rotate/8)%4 
-    load r+0, Z
-    mov r30, r+(2-rotate/8)%4
-    load r+1, Y
-    mov r28, r+(3-rotate/8)%4
-    load r+2, Z
-    load r+3, Y
 .endm
 
 /* perform qbox lookup & (optional) copy */
@@ -106,13 +92,29 @@ i=0
     .ifc <r>, <n/a>
     mov r30, d+i
     .else
-    mov r30, (r&&~3)+(r+i)%4
+    mov r30, ((r)&~3)+((r)+i)%4
     .endif
     load d+i, Z
     .endif
     i=i+1
 .endr
     subi r31, 2*j-1
+.endr
+.endm
+
+/* perform sbox lookup & (optional) copy - modified from above */
+.macro sxlati d, r=n/a, load=lpm
+local i
+i=0
+.irp j, 0,0,0,2
+    .ifc <r>, <n/a>
+    mov r30, d+i
+    .else
+    mov r30, ((r)&~3)+((r)+i)%4
+    .endif
+    load d+i, Z
+    subi r31, 2*j-1
+    i=i+1
 .endr
 .endm
 
@@ -155,7 +157,7 @@ i=0
    01 = 0x5B
    11 = 0xEF */
 .macro mds_column dst, src, poly, coef ; trying to 'roll' this barely gains anything
-.print "mds_column dst, src, poly, coef"
+;.print "mds_column dst, src, poly, coef"
     quad eor dst, src
     .irp val, 4,0
     gf_shr src, poly
@@ -200,58 +202,61 @@ loop:
 .macro round_h dst, src, step=<8+0>
 #? Y -> key material
 local loop, start, k128, k192, stride, ofs
-.if UNROLL_round_h
+.if TAB_sbox == 1
+    sxlati dst, src, ld             ; round_h simply a lookup in this case
+.elseif UNROLL_round_h
     .ifc <step>, <r24>
     .error "Incompatible: INLINE_round_g=0 but UNROLL_round_h=1"
     .endif
-.if KEY_SIZE > 192
+    .if KEY_SIZE > 192
     qxlati dst, <1,0,0,1>, src
     eorlddq dst, Y+3*step, r30      ; note: step is textually substituted
     qxlati dst, <1,1,0,0>           ; (this is hacky, but it works)
     eorlddq dst, Y+2*step, r30
     qxlati dst, <0,1,0,1>
-.elseif KEY_SIZE > 128
+    .elseif KEY_SIZE > 128
     qxlati dst, <1,1,0,0>, src
     eorlddq dst, Y+2*step, r30
     qxlati dst, <0,1,0,1>
-.else
+    .else
     qxlati dst, <0,1,0,1>, src
-.endif
+    .endif
     eorlddq dst, Y+1*step, r30
     qxlati dst, <0,0,1,1> 
     eorlddq dst, Y+0*step, r30
     qxlati dst, <1,0,1,0> 
 .else
-#? requires key to not straddle a 256-page boundary
    ; r24 and r25 'are still free' at this point, because of the order of calls to round_g in round_F
    ; they will always 'get overwritten later'. in case round_g is not inlined, the calls are carefully
    ; crafted to still ensure this.
-.ifnc <dst>, <src>
+    .ifnc <dst>, <src>
     movq dst, src
-.endif
-.ifnc <step>, <r24>                  ; if r24, assume the caller takes responsibility
+    .endif
+    .ifnc <step>, <r24>              ; if r24, assume the caller takes responsibility
     ofs    = 0*step                  ; abusing the textual substitution here, again
     stride = step*0
     ldi r24, stride-4              
     adiw Y_L, stride*KEY_SIZE/64 + ofs
-.else
+    .else
     ofs = 0
-.endif
+    .endif
     ldi r25, twofish_cookie
     rjmp start
 loop:
+    clr r30                          ; we can save 2 instrs if we want, if we require Y to not 'wrap'
     sub Y_L, r24
+    sbc Y_H, r30                     ; ... but that requires key to not straddle a 256-byte boundary
     eorldq dst, -Y, r30
 start:
     qxlat dst, r25, <7,4,6,5>
     lsl r25                          ; magic
     brcc loop           
-.if KEY_SIZE > 128
+    .if KEY_SIZE > 128
     brhs loop
-.if KEY_SIZE > 192
+    .if KEY_SIZE > 192
     lsl r25
     brne loop
-.if ofs
+    .if ofs
     sbiw Y_L, ofs
 .endif
 .endif
@@ -260,9 +265,12 @@ start:
 .endm
 
 .macro round_g_init
-.print "round_g_init"
 .if UNROLL_round_g
+    .if TAB_sbox == 1
+    ldi r31, hi8(sbox)
+    .else
     ldi r31, hi8(qbox)
+    .endif
 .endif
 .endm
 
@@ -278,7 +286,11 @@ local i, loop
     mds_columni out, r2, r30, <0x5B,0xEF,0x01,0xEF>
     mds_columni out, r3, r30, <0x5B,0x01,0xEF,0x5B>
 .else
+    .if TAB_sbox == 1
+    ldi r31, hi8(sbox)
+    .else
     ldi r31, hi8(qbox)
+    .endif
     round_h 0, src, step
 
     push Y_L ;( we are out of registers.
@@ -306,21 +318,27 @@ loop:
  * (see below)
  */
 .macro round_g_rot out, src
-.print "round_g_rot out, src"
+;.print "round_g_rot out, src"
     ; assume the caller set r24
-    adiw Y_L, KEY_SIZE/16
+    adiw Y_L, KEY_SIZE/16            ; TODO FIXME causes problems with SBOX_tab
     round_g out, src, r24
     xchgq src, src+7
 .endm
 
+; note: we ignore INLINE_round_g=0 in keypair if UNROLL_round_h=1
+; or TAB_sbox=1 -- in these cases the keyschedule uses 
+; different calls or different round_g functions
+; MAYBE TODO: we could still share the MDS computation; but this is
+; not a logical thing to want to do in both cases.
+
 .macro keypair kreg, num
-.print "keypair kreg, num"
+;.print "keypair kreg, num"
 #? Y -> key material
 local i, loop, exit, tmp            
+.if (UNROLL_keypair || TAB_sbox) && !INLINE_round_g
+.warning "Ignoring INLINE_round_g=0 in .macro keypair."
+.endif
 .if UNROLL_keypair
-    .if !INLINE_round_g
-    .warning "Ignoring INLINE_round_g in .macro keypair, because of UNROLL_keypair"
-    .endif
     .irp ofs, 0, 4
     quad mov 0, num                   ; OPT if num=0, save 1 
     inc num                           ; OPT not necessary the second time if TAB_key == 0
@@ -328,14 +346,14 @@ local i, loop, exit, tmp
     .endr
 .else
     .if !TAB_key && !INLINE_round_g
-    quad push 4                       ; !TAB_key is a annoying option
+    quad push 4                       ; !TAB_key is a annoying option in this case: can't avoid stowing this.
     .endif
+    tmp = 4*!INLINE_round_g           ; use r4 as source, to mimick round_F in case !INLINE
 loop:
-    tmp = 4*!INLINE_round_g           ; use r4 as source, to mimick round_F
     movq kreg, kreg+4                 ; no-op on the first pass
     quad mov tmp, num  
     inc num
-    .if INLINE_round_g
+    .if INLINE_round_g || TAB_sbox
     round_g kreg+4, tmp, <8+0>
     .else
     ldi r24, 4       
@@ -367,7 +385,7 @@ loop:
  */
 
 .macro keypair_wrap kreg, num
-.print "keypair_wrap kreg, num"
+;.print "keypair_wrap kreg, num"
     round_g_init
     adiw Y_L, KEY_SIZE/16 ; TODO OPT can go?
     keypair kreg, num
@@ -385,6 +403,7 @@ loop:
  */
 
 twofish_key:
+    TAB_sbox = TAB_sbox*2   ; inside this function, always use the original round_g
     ldi r20, KEY_SIZE/64
 1:  reedsolomon -Y
     .irp i, 0,1,2,3         ; order: stores the last sbox key first
@@ -409,6 +428,26 @@ twofish_key:
 .else
     movw Y_L, X_L
 .endif
+
+.if TAB_sbox                ; precompute the sboxes.
+    sbiw Y_L, KEY_SIZE/16   ; OPT the convention for layout out keysched in memory is not that handy
+    la X, sbox
+    clr r20
+    ldi r31, hi8(qbox)
+1:  quad mov 0, r20
+    round_h 0, 0, <4+0>
+    .irp i, 0,1,2           ; distribute the result over the sboxes
+    st X, i
+    inc X_H
+    .endr
+    st X+, r3
+    subi X_H, 3
+    inc r20
+    loop ne 1b
+    adiw Y_L, KEY_SIZE/16
+    TAB_sbox=1
+.endif
+
 1:  ret
     .size twofish_key, .-twofish_key
 
@@ -431,7 +470,7 @@ Z -> in principal, used by sbox/qbox.
  * Y->key material, Y->SBoxkey
  */
 .macro round_F out, in, tmp
-.print "round_F out, in, tmp"
+;.print "round_F out, in, tmp"
 local roll_start, roll_loop
 .if !TAB_key
     shared keypair_wrap, 20, r16
@@ -447,6 +486,8 @@ local roll_start, roll_loop
 .if INLINE_round_g
     round_g tmp, in
     round_g tmp+4, in+7
+cli
+sleep
 .else
     clr r24  ; set the 'step' for the round_g function to zero
     shared round_g_rot, %tmp+4, %in
@@ -487,7 +528,7 @@ local roll_start, roll_loop
 
 /* swap the feistel data. Recommend not using this! */
 .macro swap_halves a
-.print "swap_halves a"
+;.print "swap_halves a"
 .if !TAB_key                      ; OPT integrate below
     mov r25, r16                  ; this is necessary since we steal r16
     pop r16
@@ -516,6 +557,12 @@ loop:
 .if !UNROLL_enc && UNDO_swap
     .warning "Ignoring UNDO_swap since UNROLL_enc = 0"
     UNDO_swap=0
+.endif
+
+.if TAB_sbox && !TAB_key
+    .error "Incompatible: TAB_sbox = 1 but TAB_key = 0"
+    ; we could do this: swap r31 between qbox and sbox constatnly
+    ; but this just makes the code yet more complicated for no good reason
 .endif
 
 /*
@@ -566,7 +613,7 @@ L_enc_loop:
 1:  round_F 12, 4, 20
 .endif
 .if TAB_key
-    sub Z_L, Y_L
+    sub Z_L, Y_L                ; deduce round from Y
     cpi Z_L, twofish_reserve
 .else
     cpi r16, 40
@@ -594,7 +641,7 @@ L_enc_loop:
     pop Z_H
 .else
     .irp j, 4, 12 
-    .if UNDO_swap
+    .if !UNROLL_enc || UNDO_swap
     ldi r16, 3+j/4
     .else        
     ldi r16, 7-j/4
@@ -611,7 +658,7 @@ L_enc_loop:
     .size twofish_enc, .-twofish_enc
 
 .macro dump load org
-.print "dump load org"
+;.print "dump load org"
 local i
     la Z, org
     i=0
@@ -634,27 +681,27 @@ local i
 .endm
 
 .text 2048
-FISH_END = .-FISH_START
+FISH_SIZE = .-FISH_START
 
 .text
 
 main:
-    la Y, .data
-    la Z, mkey
-    copy Y, KEY_SIZE/8
-    la X, .data+32
+    la Y, mkey
+    la Z, schedule
+    la Z, _mkey
+    copy Y, KEY_SIZE/8, r20
+    la X, schedule
     rcall twofish_key
+
     .if !TAB_key
     movw X_L, Y_L
-    la Z, mkey
+    la Z, _mkey
     copy X, KEY_SIZE/8
     .endif
 
     la Z, 4
     clr r0
-1:  st Z+, r0
-    cpi Z_L, 20
-    brlo 1b
+    setmem Z, 16, r0, r20
 
     rcall twofish_enc
 
@@ -699,17 +746,19 @@ qbox:
     .byte 0x22, 0xc9, 0xc0, 0x9b, 0x89, 0xd4, 0xed, 0xab, 0x12, 0xa2, 0x0d, 0x52, 0xbb, 0x02, 0x2f, 0xa9 
     .byte 0xd7, 0x61, 0x1e, 0xb4, 0x50, 0x04, 0xf6, 0xc2, 0x16, 0x25, 0x86, 0x56, 0x55, 0x09, 0xbe, 0x91
 
-mkey:
+_mkey:
 .byte 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef
 .byte 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10
 .byte 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77
 .byte 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff
-zero:
-.space 32
-skey:
+
+sbox_key:
 .int 0, 0
-rkey:
+round_keys:
 .int 0x52C54DDE,0x11F0626D,0x7CAC9D4A,0x4D1B4AAA,0xB7B83A10,0x1E7D0BEB,0xEE9C341F,0xCFE14BE4,0xF98FFEF9,0x9C5B3C17,0x15A48310,0x342A4D81,0x424D89FE,0xC14724A7,0x311B834C,0xFDE87320,0x3302778F,0x26CD67B4,0x7A6C6362,0xC2BAF60E,0x3411B994,0xD972C87F,0x84ADB1EA,0xA7DEE434,0x54D2960F,0xA2F7CAA8,0xA6B8FF8C,0x8014C425,0x6A748D1C,0xEDBAF720,0x928EF78C,0x0338EE13,0x9949D6BE,0xC8314176,0x07C07D68,0xECAE7EA7,0x1FE71844,0x85C05C89,0xF298311E,0x696EA672
 
-.data
-blaat: .int 0x666
+.if TAB_sbox
+.comm sbox, 1024, 256
+.endif
+.comm mkey, KEY_SIZE/8, 32
+.comm schedule, twofish_reserve
