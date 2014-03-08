@@ -25,27 +25,27 @@
 
 ; TODO FIXME WORK IN PROGRESS
 
-KEY_SIZE = 256
+KEY_SIZE = 128
 MDS_POLY = 0x169
 RS_POLY  = 0x14D
 
 /* we can share code between keysched. and encryption. should we? 
    note that this is incompatible with 'UNROLL_round_h' */
-INLINE_round_g = 0
+INLINE_round_g = 1
 
 /* options controlling various size vs. speed tradeoffs */
-UNROLL_round_h = 0
-UNROLL_round_g = 0
-UNROLL_keypair = 0
-UNROLL_enc     = 0
-UNROLL_swap    = 0
+UNROLL_round_h = 1
+UNROLL_round_g = 1
+UNROLL_keypair = 1
+UNROLL_enc     = 1
+UNROLL_swap    = 1
 
 /* precompute the roundkeys */
-TAB_key = 0
-/* precompute the sbox */
-TAB_sbox = 0
+TAB_key = 1
+/* precompute the sbox; not possible in sram on attiny */
+TAB_sbox = 1
 /* use a precomputed qbox */
-TAB_q = 0
+TAB_q = 1
 
 /* should we "undo" the last swap? this is pointless; has no effect unless UNROLL_enc */
 UNDO_swap = 1
@@ -114,14 +114,14 @@ skip:
 ;.print "qbox_m dst, tmp, ofs"
 #? r30 = value; T flag selects q-box
 local loop
-    clr ofs
-loop:
+    ldi ofs, lo8(qperm)
     bld ofs, 5
+loop:
     qstep dst, tmp, ofs
-    subi ofs, 0xF0       ; addi r30, 0x10 
-    andi ofs, 0x10
+    subi ofs, 0xF0
     mov r30, dst
-    brne loop
+    sbrc ofs, 4      ; falls through on the second pass
+    rjmp loop
     swap dst
 .endm
 
@@ -366,7 +366,7 @@ loop:
  * (see below)
  */
 .macro round_g_rot out, src
-.print "round_g_rot out, src"
+;.print "round_g_rot out, src"
     ; assume the caller set up the stride in 'out'
     round_g out, src, out
     xchgq src, src+7
@@ -467,11 +467,13 @@ twofish_key:
     ldi r16, 40
     clr r12                 ; round number
     .if INLINE_round_g
+    mov r13, r16
     round_g_init
 1:  keypair 16, r12         
     .irp i, 0,1,2,3,6,7,4,5 ; fix the order of 2nd key
     st X+, i+16
     .endr
+    cpse r12, r13           ; finally an excuse to use this instruction
     .else
     movw r18, X_L
 1:  round_g_init
@@ -481,8 +483,8 @@ twofish_key:
     st Z+, i+20
     .endr
     movw r18, Z_L
-    .endif
     cpse r12, r16           ; finally an excuse to use this instruction
+    .endif
     rjmp 1b
     movw Y_L, r14
 .else
@@ -745,10 +747,11 @@ qbox: .space 512
     brtc 2b
 .endm
 
-.text 2048
-FISH_SIZE = .-FISH_START
+.text 0x2000
+FISH_PROGSIZE = .-FISH_START
+FISH_CODEEND = .
 
-.text
+.text 
 main:
     la Y, mkey
     la Z, schedule
@@ -760,7 +763,7 @@ main:
     .if !TAB_key
     la X, schedule+KEY_SIZE/16
     la Z, _mkey
-    copy X, KEY_SIZE/8
+    copy X, KEY_SIZE/8, r20
     .endif
 
     la Z, 4
@@ -773,7 +776,7 @@ main:
     sleep
     .size main, .-main
 
-.subsection 4096
+.subsection 0x2000
 .if TAB_q
 .p2align 9
 qbox:
@@ -811,7 +814,7 @@ qbox:
     .byte 0x22, 0xc9, 0xc0, 0x9b, 0x89, 0xd4, 0xed, 0xab, 0x12, 0xa2, 0x0d, 0x52, 0xbb, 0x02, 0x2f, 0xa9 
     .byte 0xd7, 0x61, 0x1e, 0xb4, 0x50, 0x04, 0xf6, 0xc2, 0x16, 0x25, 0x86, 0x56, 0x55, 0x09, 0xbe, 0x91
 .else
-.p2align 8
+.p2align 6
 qperm:
     ; high nibble: even permutation; low nibble: odd permutation
     ;q0
@@ -822,6 +825,9 @@ qperm:
     .byte 0x21, 0x8E, 0xB2, 0xDB, 0xF4, 0x7C, 0x63, 0xE7, 0x36, 0x1D, 0x9A, 0x45, 0x0F, 0xA9, 0xC0, 0x58
     .byte 0x4B, 0xC9, 0x75, 0x51, 0x1C, 0x63, 0x9D, 0xAE, 0x06, 0xE4, 0xD7, 0x8F, 0x22, 0xB0, 0x38, 0xFA
 .endif
+
+FISH_DATAEND = .
+FISH_SIZE = .-FISH_START
 
 _mkey:
 .byte 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef
