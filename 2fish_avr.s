@@ -114,7 +114,7 @@ skip:
 ;.print "qbox_m dst, tmp, ofs"
 #? r30 = value; T flag selects q-box
 local loop
-    clr ofs              ; OPT we could remove 1 cycle here. but we're already unbearably slow anyway.
+    clr ofs
 loop:
     bld ofs, 5
     qstep dst, tmp, ofs
@@ -183,7 +183,7 @@ i=0
     load d+i, Z
     .else
     ldi Z_H, hi8(qperm)
-    qbox_m %d+i, select+2, select+1 ; we assume these are available
+    qbox_m %d+i, %select+2, %select+1
     .endif
     i=i+1
 .endr
@@ -464,15 +464,25 @@ twofish_key:
 
 .if TAB_key
     movw r14, X_L           ; save this position to return it to the caller as Y
-    ldi r20, 40             ; all the 'good' registers could be occupied.
-    mov r13, r20
+    ldi r16, 40
     clr r12                 ; round number
+    .if INLINE_round_g
     round_g_init
-1:  keypair 16, r12         ; allocating on r16 means we can optimally share round_g (in some cases)
+1:  keypair 16, r12         
     .irp i, 0,1,2,3,6,7,4,5 ; fix the order of 2nd key
-    st X+, (16+i)
+    st X+, i+16
     .endr
-    cpse r12, r13           ; finally an excuse to use this instruction
+    .else
+    movw r18, X_L
+1:  round_g_init
+    keypair 20, r12         ; allocating on r20 means we can optimally share round_g (in some cases)
+    movw Z_L, r18           ; ... alas, it also means X gets clobbered. 
+    .irp i, 0,1,2,3,6,7,4,5 
+    st Z+, i+20
+    .endr
+    movw r18, Z_L
+    .endif
+    cpse r12, r16           ; finally an excuse to use this instruction
     rjmp 1b
     movw Y_L, r14
 .else
@@ -801,7 +811,7 @@ qbox:
     .byte 0x22, 0xc9, 0xc0, 0x9b, 0x89, 0xd4, 0xed, 0xab, 0x12, 0xa2, 0x0d, 0x52, 0xbb, 0x02, 0x2f, 0xa9 
     .byte 0xd7, 0x61, 0x1e, 0xb4, 0x50, 0x04, 0xf6, 0xc2, 0x16, 0x25, 0x86, 0x56, 0x55, 0x09, 0xbe, 0x91
 .else
-.p2align 8 ; TODO check alignment
+.p2align 8
 qperm:
     ; high nibble: even permutation; low nibble: odd permutation
     ;q0
