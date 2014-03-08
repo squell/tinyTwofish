@@ -225,6 +225,7 @@ I&op&_&a&_&b&_&c&_&d&:
     op a, b, c, d
     .endif
     ret
+    .size I&op&_&a&_&b&_&c&_&d&, .-I&op&_&a&_&b&_&c&_&d&
 .previous
 .popsection
 .endif
