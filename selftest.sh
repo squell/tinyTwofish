@@ -1,0 +1,1 @@
+for ((x=0; x<256; x++)); do rm -f a.out; echo -n $"[$x]"; if avr-as -g -ot.o -defsym TEST=$x -mmcu=attiny85 2fish_avr.s 2> /dev/null && avr-ld t.o; then ./driver a.out | tail -n1 | grep "37 52 7b e0 05 23 34 b8 9f 0c fc ca e8 7c fa 20" || echo "fail"; else echo "not run"; fi done
