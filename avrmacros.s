@@ -155,6 +155,20 @@ IF=7
 .endif
 .endm
 
+.macro setmem D, size, src, cntr=n/a
+.ifc <n/a>, <cntr>
+    .rept size
+    st D&+, src
+    .endr
+.else
+local cp
+    ldi cntr, size
+cp: st D&+, src
+    dec cntr
+    brne cp
+.endif
+.endm
+
 .macro copy D, size, cntr=n/a, tmp=r0
 .ifc <n/a>, <cntr>
     .rept size
@@ -175,13 +189,13 @@ cp: lpm tmp, Z+
  * backjumps, figure out what sequence of opcodes to emit.
  * Can only be used for backjumps since gnu as is single-pass 
  */
-.macro loop cnd, label
+.macro br cnd, label
 .if .-label < 128
     br&cnd label
 .else
 local skip, select
 select=0
-.irp case, lt,ge,lt,eq,ne,eq,lo,sh,cs,cc,cs,mi,pl,mi,vs,vc,vs,tc,ts,tc
+.irp case, lt,ge,lt,eq,ne,eq,lo,sh,cs,cc,cs,mi,pl,mi,vs,vc,vs,tc,ts,tc,hc,hs,hc,id,ie,id
     .if select
     br\case skip
     rjmp label
