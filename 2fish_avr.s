@@ -31,18 +31,21 @@ RS_POLY  = 0x14D
 
 /* we can share code between keysched. and encryption. should we? 
    note that this is incompatible with 'UNROLL_round_h' */
-INLINE_round_g = 1
+INLINE_round_g = 0
 
 /* options controlling various size vs. speed tradeoffs */
-UNROLL_round_h = 1
-UNROLL_round_g = 1
-UNROLL_keypair = 1
-UNROLL_enc     = 1
-UNROLL_swap    = 1
+UNROLL_round_h = 0
+UNROLL_round_g = 0
+UNROLL_keypair = 0
+UNROLL_enc     = 0
+UNROLL_swap    = 0
 
 /* precompute the roundkeys */
-TAB_key = 1
-TAB_sbox = 1
+TAB_key = 0
+/* precompute the sbox */
+TAB_sbox = 0
+/* use a precomputed qbox */
+TAB_q = 0
 
 /* should we "undo" the last swap? this is pointless; has no effect unless UNROLL_enc */
 UNDO_swap = 1
@@ -81,8 +84,52 @@ local skip
 skip:
 .endm
 
+/* perform the qbox lookup on the fly if needed */
+.macro qstep dst, tmp, ofs, load=lpm
+#? Z -> qbox
+    mov tmp, r30    ; a|b
+    swap tmp        ; b|a
+    andi r30, 0xF   ; _|b 
+    eor r30, tmp    ; b|b^a
+    mov dst, r30 
+    swap dst        ; b^a|b
+    lsr dst         ; ?|b>>>1 ^ 8a
+    eor tmp, dst    ; ?|b>>>1 ^ 8a ^ a
+
+    andi r30, 0xF 
+    or r30, ofs
+    load r30, Z     ; t0[]
+    andi r30, 0xF0
+    mov dst, r30    ; necessary, since dst may be < r16
+
+    mov r30, tmp
+    andi r30, 0xF 
+    or r30, ofs
+    load tmp, Z     ; t1[]
+    andi tmp, 0x0F
+    or dst, tmp
+.endm
+
+.macro qbox_m dst, tmp, ofs
+;.print "qbox_m dst, tmp, ofs"
+#? r30 = value; T flag selects q-box
+local loop
+    clr ofs              ; OPT we could remove 1 cycle here. but we're already unbearably slow anyway.
+loop:
+    bld ofs, 5
+    qstep dst, tmp, ofs
+    subi ofs, 0xF0       ; addi r30, 0x10 
+    andi ofs, 0x10
+    mov r30, dst
+    brne loop
+    swap dst
+.endm
+
 /* perform qbox lookup & (optional) copy */
 .macro qxlati d, select, r=n/a, load=lpm
+.if TAB_q == 0
+.error "Incompatible: TAB_q=0 but UNROLL_round_h=1"
+.endif
 #?  ldi r31, hi8(table)
 local i
 .irp j, 0,1
@@ -126,13 +173,18 @@ local i
 i=0
 .irp j, wiring
     bst select, j
-    bld r31, 0
     .ifc <r>, <n/a>
     mov r30, d+i
     .else
     mov r30, r+i
     .endif
+    .if TAB_q
+    bld r31, 0
     load d+i, Z
+    .else
+    ldi Z_H, hi8(qperm)
+    qbox_m %d+i, select+2, select+1 ; we assume these are available
+    .endif
     i=i+1
 .endr
 .endm
@@ -199,13 +251,13 @@ loop:
 
 .equ twofish_reserve, KEY_SIZE/16 + 40*4*TAB_key
 
-.macro round_h dst, src, step=<8+0>
+.macro round_h dst, src, step=<8+0>, tmpw=
 #? Y -> key material
 local loop, start, k128, k192, stride, ofs
 .if TAB_sbox == 1
     sxlati dst, src, ld             ; round_h simply a lookup in this case
 .elseif UNROLL_round_h
-    .ifc <step>, <r24>
+    .ifc <step>, <tmpw>
     .error "Incompatible: INLINE_round_g=0 but UNROLL_round_h=1"
     .endif
     .if KEY_SIZE > 192
@@ -226,37 +278,34 @@ local loop, start, k128, k192, stride, ofs
     eorlddq dst, Y+0*step, r30
     qxlati dst, <1,0,1,0> 
 .else
-   ; r24 and r25 'are still free' at this point, because of the order of calls to round_g in round_F
-   ; they will always 'get overwritten later'. in case round_g is not inlined, the calls are carefully
-   ; crafted to still ensure this.
     .ifnc <dst>, <src>
     movq dst, src
     .endif
-    .ifnc <step>, <r24>              ; if r24, assume the caller has set the skip-distance in r24
+    .ifnc <step>, <tmpw>             ; if r24, assume the caller has set the skip-distance in r24
     ofs    = 0*step                  ; and modified Y_L
     stride = step*0
-    ldi r24, stride-4              
+    ldi tmpw, stride-4              
     adiw Y_L, stride*KEY_SIZE/64 + ofs
     .else
     adiw Y_L, KEY_SIZE/16
     ofs = 0
     .endif
-    ldi r25, twofish_cookie
+    ldi tmpw+1, twofish_cookie       ; load the magic cookie
     rjmp start
 loop:
     clr r30                          ; we can save 2 instrs if we want, if we require Y to not 'wrap'
-    sub Y_L, r24
+    sub Y_L, tmpw
     sbc Y_H, r30                     ; ... but that requires key to not straddle a 256-byte boundary
     eorldq dst, -Y, r30
 start:
-    qxlat dst, r25, <7,4,6,5>
-    lsl r25                          ; magic
-    brcc loop           
+    qxlat dst, tmpw+1, <7,4,6,5>
+    lsl tmpw+1                       ; the bit pattern is constructed to control the loop
+    br cc loop           
     .if KEY_SIZE > 128
-    brhs loop
+    br hs loop
     .if KEY_SIZE > 192
-    lsl r25
-    brne loop
+    lsl tmpw+1
+    br ne loop
     .if ofs
     sbiw Y_L, ofs
 .endif
@@ -265,12 +314,14 @@ start:
 .endif                      
 .endm
 
-.macro round_g_init
-.if UNROLL_round_g
+.macro round_g_init force=0
+.if UNROLL_round_g || force
     .if TAB_sbox == 1
     ldi r31, hi8(sbox)
-    .else
+    .elseif TAB_q 
     ldi r31, hi8(qbox)
+    .else
+    ldi r31, hi8(qperm)
     .endif
 .endif
 .endm
@@ -280,19 +331,15 @@ start:
 #? Y -> key material
 local i, loop
 .if UNROLL_round_g
-    round_h 0, src, step
+    round_h 0, src, step, out
     ldi r30, MDS_POLY>>1
     mds_columni out, r0, r30, <0x01,0x5B,0xEF,0xEF>, mov
     mds_columni out, r1, r30, <0xEF,0xEF,0x5B,0x01>
     mds_columni out, r2, r30, <0x5B,0xEF,0x01,0xEF>
     mds_columni out, r3, r30, <0x5B,0x01,0xEF,0x5B>
 .else
-    .if TAB_sbox == 1
-    ldi r31, hi8(sbox)
-    .else
-    ldi r31, hi8(qbox)
-    .endif
-    round_h 0, src, step
+    round_g_init 1
+    round_h 0, src, step, out
 
     push Y_L ;( we are out of registers.
     ; an encoding of the MDS matrix
@@ -319,9 +366,9 @@ loop:
  * (see below)
  */
 .macro round_g_rot out, src
-;.print "round_g_rot out, src"
-    ; assume the caller set r24
-    round_g out, src, r24
+.print "round_g_rot out, src"
+    ; assume the caller set up the stride in 'out'
+    round_g out, src, out
     xchgq src, src+7
 .endm
 
@@ -357,7 +404,7 @@ loop:
     round_g kreg+4, tmp, <8+pos>
     adiw Y_L, 4
     .else
-    ldi r24, 4       
+    ldi kreg+4, 4       
     adiw Y_L, pos+KEY_SIZE/16
     shared round_g_rot, %kreg+4, %tmp
 	.if !TAB_key
@@ -436,7 +483,7 @@ twofish_key:
 .if TAB_sbox                ; precompute the sboxes.
     la X, sbox
     clr r20
-    ldi r31, hi8(qbox)
+    round_g_init 1          ; FIXME REMOVETHISCOMMENT ldi r31, hi8(qbox)
 1:  quad mov 0, r20
     round_h 0, 0, <4+0>
     .irp i, 0,1,2           ; distribute the result over the sboxes
@@ -446,7 +493,7 @@ twofish_key:
     st X+, r3
     subi X_H, 3
     inc r20
-    loop ne 1b
+    br ne 1b
     TAB_sbox=1
 .endif
 
@@ -618,7 +665,7 @@ L_enc_loop:
 .else
     cpi r16, 40
 .endif
-    loop lo, L_enc_loop
+    br lo, L_enc_loop
 
 .if UNDO_swap
     swap_halves 4
@@ -669,22 +716,29 @@ local i
     ser r31
 .endm
 
-.macro qcompute reg, tmp=r0
-    mov tmp, reg    ; reg: a|b
-    andi tmp, 0xF   
-    swap tmp        ; tmp: b|_
-    xor reg, tmp
-    eor tmp, <a|_>  ; 
-    lsr reg         
-    andi reg, 0xF   ; reg: _|ror(b,4)^8a&0x10
-
+; this is useful if we want the qtable to reside in sram and keep codesize down
+; and of course, to test the code
+.macro compute_q qtab
+.data
+.p2align 9
+qbox: .space 512
+.previous
+    ldi Z_H, hi8(qtab)
+    ldi Y_H, hi8(qbox)
+    clr Y_L
+2:  bst Y_H, 0
+1:  mov r30, Y_L
+    qbox_m r0, r16, r17
+    st Y+, r0
+    tst Y_L
+    brne 1b
+    brtc 2b
 .endm
 
 .text 2048
 FISH_SIZE = .-FISH_START
 
 .text
-
 main:
     la Y, mkey
     la Z, schedule
@@ -710,7 +764,8 @@ main:
     .size main, .-main
 
 .subsection 4096
-.balign 512
+.if TAB_q
+.p2align 9
 qbox:
     .byte 0xa9, 0x67, 0xb3, 0xe8, 0x04, 0xfd, 0xa3, 0x76, 0x9a, 0x92, 0x80, 0x78, 0xe4, 0xdd, 0xd1, 0x38 
     .byte 0x0d, 0xc6, 0x35, 0x98, 0x18, 0xf7, 0xec, 0x6c, 0x43, 0x75, 0x37, 0x26, 0xfa, 0x13, 0x94, 0x48 
@@ -745,6 +800,18 @@ qbox:
     .byte 0x29, 0x2e, 0xac, 0x15, 0x59, 0xa8, 0x0a, 0x9e, 0x6e, 0x47, 0xdf, 0x34, 0x35, 0x6a, 0xcf, 0xdc 
     .byte 0x22, 0xc9, 0xc0, 0x9b, 0x89, 0xd4, 0xed, 0xab, 0x12, 0xa2, 0x0d, 0x52, 0xbb, 0x02, 0x2f, 0xa9 
     .byte 0xd7, 0x61, 0x1e, 0xb4, 0x50, 0x04, 0xf6, 0xc2, 0x16, 0x25, 0x86, 0x56, 0x55, 0x09, 0xbe, 0x91
+.else
+.p2align 8 ; TODO check alignment
+qperm:
+    ; high nibble: even permutation; low nibble: odd permutation
+    ;q0
+    .byte 0x8E, 0x1C, 0x7B, 0xD8, 0x61, 0xF2, 0x33, 0x25, 0x0F, 0xB4, 0x5A, 0x96, 0xE7, 0xC0, 0xA9, 0x4D
+    .byte 0xBD, 0xA7, 0x5F, 0xE4, 0x61, 0xD2, 0x96, 0x0E, 0xC9, 0x8B, 0xF3, 0x30, 0x28, 0x45, 0x7C, 0x1A
+
+    ;q1
+    .byte 0x21, 0x8E, 0xB2, 0xDB, 0xF4, 0x7C, 0x63, 0xE7, 0x36, 0x1D, 0x9A, 0x45, 0x0F, 0xA9, 0xC0, 0x58
+    .byte 0x4B, 0xC9, 0x75, 0x51, 0x1C, 0x63, 0x9D, 0xAE, 0x06, 0xE4, 0xD7, 0x8F, 0x22, 0xB0, 0x38, 0xFA
+.endif
 
 _mkey:
 .byte 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef
@@ -753,7 +820,7 @@ _mkey:
 .byte 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff
 
 sbox_key:
-.int 0, 0
+.int 0xDEADBEEF, 0xCAFEBABE, 0x01234567, 0x33221100
 round_keys:
 .int 0x52C54DDE,0x11F0626D,0x7CAC9D4A,0x4D1B4AAA,0xB7B83A10,0x1E7D0BEB,0xEE9C341F,0xCFE14BE4,0xF98FFEF9,0x9C5B3C17,0x15A48310,0x342A4D81,0x424D89FE,0xC14724A7,0x311B834C,0xFDE87320,0x3302778F,0x26CD67B4,0x7A6C6362,0xC2BAF60E,0x3411B994,0xD972C87F,0x84ADB1EA,0xA7DEE434,0x54D2960F,0xA2F7CAA8,0xA6B8FF8C,0x8014C425,0x6A748D1C,0xEDBAF720,0x928EF78C,0x0338EE13,0x9949D6BE,0xC8314176,0x07C07D68,0xECAE7EA7,0x1FE71844,0x85C05C89,0xF298311E,0x696EA672
 
@@ -762,3 +829,4 @@ round_keys:
 .endif
 .comm mkey, KEY_SIZE/8, 32
 .comm schedule, twofish_reserve
+
