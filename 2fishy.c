@@ -15,7 +15,7 @@
 
 #define MATH_OPT
 
-typedef union { word word; byte byte[4]; } vector;
+typedef union { byte byte[4]; word word; } vector;
 
 /* on intel, gcc optimizes all this away */
 static int little_endian() 
@@ -92,6 +92,17 @@ static void pht(word *a, word *b)
     *b += *a;
 }
 
+
+word bswap(word a)
+{
+    if(little_endian()) return a;
+        vector x;
+	    x.word = a;
+	        swap(byte, x.byte[0], x.byte[3]);
+		    swap(byte, x.byte[1], x.byte[2]);
+		        return x.word;
+			}
+
 static word mds(word w)
 {
 #ifndef MATH_OPT
@@ -108,23 +119,25 @@ static word mds(word w)
     gf_matrix_mul(acc.byte, matrix, x.byte, 0x169, little_endian(), little_endian());
     return acc.word;
 #else
-    /* this takes the role of the matrix; 00b = 0x01, 01b = 0x5B, 11b = 0xEF */
-    word cw = little_endian()? 0x73c73d5c : 0x357cd3cd;
-
-    vector x, acc = { 0 };
-    int n, m;
+    /* compute each element in GF(2^8) just once, then use the fast multiplier */
+    vector m01[4] = { { 1,0,0,0 }, { 0,0,0,1 }, { 0,0,1,0 }, { 0,1,0,0 } };
+    vector m5B[4] = { { 0,1,0,0 }, { 0,0,1,0 }, { 1,0,0,0 }, { 1,0,0,1 } };
+    vector mEF[4] = { { 0,0,1,1 }, { 1,1,0,0 }, { 0,1,0,1 }, { 0,0,1,0 } };
+    vector x;
+    int n;
+    word acc = 0;
     x.word = w;
-    for(m=0; m < 4; m++)
-        for(n=0; n < 4; n++) {
-            byte v = x.byte[n];
-            acc.byte[m] ^= v;
-            v = gf_shr(v, 0x169);
-            if(cw&2) acc.byte[m] ^= v;
-            v = gf_shr(v, 0x169);
-            if(cw&1) acc.byte[m] ^= v;
-            cw>>=2;
-        }
-    return acc.word;
+    for(n=0; n < 4; n++) {
+	byte v, x01, x5B, xEF;
+	v = x01 = x5B = xEF = x.byte[little_endian()?n:3-n];
+	v = gf_shr(v, 0x169);
+	xEF ^= v;
+	v = gf_shr(v, 0x169);
+	xEF ^= v;
+	x5B ^= v;
+	acc ^= x01*m01[n].word | x5B*m5B[n].word | xEF*mEF[n].word;
+    }
+    return acc;
 #endif
 }
 
@@ -211,20 +224,21 @@ static word reedsolomon(byte const *x)
 
 static byte qbox[2][256];
 
-static word round_h_aux(word w, byte const *select)
+static word round_h_aux(word w, word const select)
 {
-    vector x;
+    vector x, s;
+    s.word = select;
     x.word = w;
-    x.byte[0] = qbox[select[0]][x.byte[0]];
-    x.byte[1] = qbox[select[1]][x.byte[1]];
-    x.byte[2] = qbox[select[2]][x.byte[2]];
-    x.byte[3] = qbox[select[3]][x.byte[3]];
+    x.byte[0] = qbox[s.byte[0]][x.byte[0]];
+    x.byte[1] = qbox[s.byte[1]][x.byte[1]];
+    x.byte[2] = qbox[s.byte[2]][x.byte[2]];
+    x.byte[3] = qbox[s.byte[3]][x.byte[3]];
     return x.word;
 }
 
 static word round_h(word x, int k, word *L)
 {
-    static vector const selector[5] = {
+    static word const selector[5] = {
         0x00010001,
         0x01010000,
         0x01000100,
@@ -232,8 +246,8 @@ static word round_h(word x, int k, word *L)
         0x01000001
     };
     for( ; k; k--)
-        x = round_h_aux(x, selector[k].byte) ^ L[(k-1)*2];
-    return round_h_aux(x, selector[k].byte);
+        x = round_h_aux(x, selector[k]) ^ L[(k-1)*2];
+    return round_h_aux(x, selector[k]);
 }
 
 void twofish_key(int bits, byte const *master_key, schedule keys, sbox sbox)
