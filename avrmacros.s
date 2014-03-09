@@ -67,6 +67,15 @@ IF=7
     ldi M&_H, hi8(ofs)
 .endm
 
+; used for data that can reside in flash or sram
+.macro load reg, Z, sram
+.if sram
+    ld reg, Z
+.else
+    lpm reg, Z
+.endif
+.endm
+
 .macro far xfer label
     ldi Z_H, pm_hi8(label)
     ldi Z_L, pm_lo8(label)
