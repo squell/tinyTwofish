@@ -43,12 +43,16 @@ UNROLL_swap    = 1
 /* precompute the roundkeys */
 TAB_key = 1
 /* precompute the sbox; not possible in sram on attiny */
-TAB_sbox = 1
+TAB_sbox = 0
 /* use a precomputed qbox */
 TAB_q = 1
 
 /* should we "undo" the last swap? this is pointless; has no effect unless UNROLL_enc */
 UNDO_swap = 1
+
+/* where do we expect the tables to reside? */
+SRAM_sbox = 1
+SRAM_q = 0
 
 .global twofish_key, twofish_enc, twofish_reserve
 
@@ -126,7 +130,7 @@ loop:
 .endm
 
 /* perform qbox lookup & (optional) copy */
-.macro qxlati d, select, r=n/a, load=lpm
+.macro qxlati d, select, r=n/a
 .if TAB_q == 0
 .error "Incompatible: TAB_q=0 but UNROLL_round_h=1"
 .endif
@@ -141,7 +145,7 @@ i=0
     .else
     mov r30, ((r)&~3)+((r)+i)%4
     .endif
-    load d+i, Z
+    load d+i, Z, SRAM_q
     .endif
     i=i+1
 .endr
@@ -150,7 +154,7 @@ i=0
 .endm
 
 /* perform sbox lookup & (optional) copy - modified from above */
-.macro sxlati d, r=n/a, load=lpm
+.macro sxlati d, r=n/a
 local i
 i=0
 .irp j, 0,0,0,2
@@ -159,7 +163,7 @@ i=0
     .else
     mov r30, ((r)&~3)+((r)+i)%4
     .endif
-    load d+i, Z
+    load d+i, Z, SRAM_sbox
     subi r31, 2*j-1
     i=i+1
 .endr
@@ -167,7 +171,7 @@ i=0
 
 # select is now a register from which the lower nibble controls the lookup
 # expects table to be 512-byte aligned
-.macro qxlat d, select, wiring=<0,1,2,3>, r=, load=lpm
+.macro qxlat d, select, wiring=<0,1,2,3>, r=
 #?  ldi r31, hi8(table)
 local i
 i=0
@@ -180,7 +184,7 @@ i=0
     .endif
     .if TAB_q
     bld r31, 0
-    load d+i, Z
+    load d+i, Z, SRAM_q
     .else
     ldi Z_H, hi8(qperm)
     qbox_m %d+i, %select+2, %select+1
@@ -255,7 +259,7 @@ loop:
 #? Y -> key material
 local loop, start, k128, k192, stride, ofs
 .if TAB_sbox == 1
-    sxlati dst, src, ld             ; round_h simply a lookup in this case
+    sxlati dst, src                 ; round_h simply a lookup in this case
 .elseif UNROLL_round_h
     .ifc <step>, <tmpw>
     .error "Incompatible: INLINE_round_g=0 but UNROLL_round_h=1"
@@ -492,12 +496,12 @@ twofish_key:
 .endif
     sbiw Y_L, KEY_SIZE/16
 
-.if TAB_sbox                ; precompute the sboxes.
+.if TAB_sbox && SRAM_sbox   ; precompute the sboxes.
     la X, sbox
     clr r20
-    round_g_init 1          ; FIXME REMOVETHISCOMMENT ldi r31, hi8(qbox)
+    round_g_init 1
 1:  quad mov 0, r20
-    round_h 0, 0, <4+0>
+    round_h 0, 0, <4+0>, 16
     .irp i, 0,1,2           ; distribute the result over the sboxes
     st X, i
     inc X_H
@@ -730,12 +734,10 @@ local i
 
 ; this is useful if we want the qtable to reside in sram and keep codesize down
 ; and of course, to test the code
-.macro compute_q qtab
-.data
-.p2align 9
-qbox: .space 512
-.previous
-    ldi Z_H, hi8(qtab)
+.macro init_q
+    .comm qbox, 512, 512
+    ldi Z_H, hi8(qperm)
+    ldi r17, lo8(qperm)
     ldi Y_H, hi8(qbox)
     clr Y_L
 2:  bst Y_H, 0
@@ -753,6 +755,9 @@ FISH_CODEEND = .
 
 .text 
 main:
+    .if TAB_q && SRAM_q
+    init_q
+    .endif
     la Y, mkey
     la Z, schedule
     la Z, _mkey
@@ -777,7 +782,7 @@ main:
     .size main, .-main
 
 .subsection 0x2000
-.if TAB_q
+.if TAB_q && !SRAM_q
 .p2align 9
 qbox:
     .byte 0xa9, 0x67, 0xb3, 0xe8, 0x04, 0xfd, 0xa3, 0x76, 0x9a, 0x92, 0x80, 0x78, 0xe4, 0xdd, 0xd1, 0x38 
@@ -814,7 +819,7 @@ qbox:
     .byte 0x22, 0xc9, 0xc0, 0x9b, 0x89, 0xd4, 0xed, 0xab, 0x12, 0xa2, 0x0d, 0x52, 0xbb, 0x02, 0x2f, 0xa9 
     .byte 0xd7, 0x61, 0x1e, 0xb4, 0x50, 0x04, 0xf6, 0xc2, 0x16, 0x25, 0x86, 0x56, 0x55, 0x09, 0xbe, 0x91
 .else
-.p2align 6
+.p2align 8 ;lame
 qperm:
     ; high nibble: even permutation; low nibble: odd permutation
     ;q0
