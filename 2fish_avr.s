@@ -25,7 +25,7 @@
 
 ; TODO FIXME WORK IN PROGRESS
 
-KEY_SIZE = 128
+KEY_SIZE = 256
 MDS_POLY = 0x169
 RS_POLY  = 0x14D
 
@@ -690,7 +690,7 @@ L_enc_loop:
     ; post-whitening
 
 .if TAB_key
-    adiw Y_L, 32                ; TODO OPT this can be avoided?
+    adiw Y_L, KEY_SIZE/16+16   ; TODO OPT this can be avoided?
     .if UNROLL_enc && !UNDO_swap
 	.irp k, 12,16,4,8
     eorldq k, Y+
@@ -749,6 +749,48 @@ local i
     brtc 2b
 .endm
 
+.text 0x4000
+
+; known answer tests.
+
+.data 
+katkey:  .space KEY_SIZE/8
+katdata: .space 16
+.previous
+kat:
+    clr r20                           ; setup
+    la Y, katdata
+    setmem Y, 16, r20, r21
+    la Y, katkey
+    setmem Y, KEY_SIZE/8, r20, r21
+
+1:  push r20
+    la X, schedule        
+    .if TAB_key
+    la Y, katkey+KEY_SIZE/8
+    .else
+    la Y, schedule+KEY_SIZE/16
+    loadram Y, katkey, KEY_SIZE/8, ld
+    .endif
+    rcall twofish_key                    ; produce schedule
+
+    copy katkey, katkey+16, KEY_SIZE/8-16; update the masterkey
+    copy katdata, katkey, 16
+
+    la X, 4                              ; encrypt
+    loadram X, katdata, 16, ld
+    la Y, schedule
+    rcall twofish_enc
+
+    la X, katdata                       ; save result and loop
+    loadram X, 4, 16, ld
+    pop r20
+    inc r20
+    cpi r20, 49
+    brlo 1b
+
+    ret
+
 .text 0x2000
 FISH_PROGSIZE = .-FISH_START
 FISH_CODEEND = .
@@ -759,16 +801,13 @@ main:
     init_q
     .endif
     la Y, mkey
-    la Z, schedule
-    la Z, _mkey
-    copy Y, KEY_SIZE/8, r20
+    loadram Y, _mkey, KEY_SIZE/8
     la X, schedule
     rcall twofish_key
 
     .if !TAB_key
     la X, schedule+KEY_SIZE/16
-    la Z, _mkey
-    copy X, KEY_SIZE/8, r20
+    loadram X, _mkey, KEY_SIZE/8
     .endif
 
     la Z, 4

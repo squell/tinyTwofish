@@ -178,20 +178,36 @@ cp: st D&+, src
 .endif
 .endm
 
-.macro copy D, size, cntr=n/a, tmp=r0
-.ifc <n/a>, <cntr>
-    .rept size
-    lpm tmp, Z+
-    st D&+, tmp
-    .endr
-.else
+.macro copy src, dst, size, S=X, D=Y, tmp=r0
 local cp
-    ldi cntr, size
-cp: lpm tmp, Z+
-    st D&+, tmp
-    dec cntr
+.if size
+.if src > dst
+    ; copy forwards
+    la S, src
+    la D, dst
+cp: ld tmp, S+
+    st D+, tmp
+    cpi S&_L, lo8(src+size)
+    brne cp
+.else
+    ; copy backwards
+    la S, src+size
+    la D, dst+size
+cp: ld tmp, -S
+    st -D, tmp
+    cpi S&_L, lo8(src)
     brne cp
 .endif
+.endif
+.endm
+
+.macro loadram D ,src, size, load=lpm, tmp=r0
+local cp
+    la Z, src
+cp: load tmp, Z+
+    st D&+, tmp
+    cpi Z_L, lo8(src+size)
+    brne cp
 .endm
 
 /* A cute hack of the GNU as preprocessor: let the assembler, in the case of
