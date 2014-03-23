@@ -24,6 +24,22 @@ static int little_endian()
     return tmp.byte;
 }
 
+/* we need to memcpy data at some places, we might as well translate the
+   key/plaintext data to big-endian (on big-endian machines) at this point */
+
+static bswapcpy(void *dst, const void *src, unsigned octets)
+{
+    if(little_endian()) {
+	memcpy(dst, src, octets);
+    } else {
+	unsigned char *q = dst;
+	unsigned char const *p = src;
+	unsigned i;
+	for(i = 0; i < octets; i++)
+	    q[i&~3 | 3-(i&3)] = p[i];
+    }
+}
+
 #define swap(type, a, b) { \
     type tmp = a; \
     a = b, b = tmp; \
@@ -159,7 +175,7 @@ void twofish_enc(void *dest, void const *src, schedule const keys, sbox const sb
 {
     word data[4];
     int i;
-    memcpy(data, src, sizeof data);
+    bswapcpy(data, src, sizeof data);
 
     whiten(data, keys);
     for(i=0; i < 16; i+=2) {
@@ -171,7 +187,7 @@ void twofish_enc(void *dest, void const *src, schedule const keys, sbox const sb
     swap(word, data[1], data[3]);
     whiten(data, keys+4);
 
-    memcpy(dest, data, sizeof data);
+    bswapcpy(dest, data, sizeof data);
 }
 
 /* 
@@ -245,7 +261,7 @@ void twofish_key(int bits, byte const *master_key, schedule keys, sbox sbox)
     int n, k = bits/64;
 
     /* just to be really pedantic about alignment */
-    memcpy(key_copy, master_key, bits/8);
+    bswapcpy(key_copy, master_key, bits/8);
 
     /* compute the roundkeys */
     for(n=0; n < 20; n++) {
