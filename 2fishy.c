@@ -92,17 +92,6 @@ static void pht(word *a, word *b)
     *b += *a;
 }
 
-
-word bswap(word a)
-{
-    if(little_endian()) return a;
-        vector x;
-	    x.word = a;
-	        swap(byte, x.byte[0], x.byte[3]);
-		    swap(byte, x.byte[1], x.byte[2]);
-		        return x.word;
-			}
-
 static word mds(word w)
 {
 #ifndef MATH_OPT
@@ -120,9 +109,9 @@ static word mds(word w)
     return acc.word;
 #else
     /* compute each element in GF(2^8) just once, then use the fast multiplier */
-    vector m01[4] = { { 1,0,0,0 }, { 0,0,0,1 }, { 0,0,1,0 }, { 0,1,0,0 } };
-    vector m5B[4] = { { 0,1,0,0 }, { 0,0,1,0 }, { 1,0,0,0 }, { 1,0,0,1 } };
-    vector mEF[4] = { { 0,0,1,1 }, { 1,1,0,0 }, { 0,1,0,1 }, { 0,0,1,0 } };
+    word w01[4] = { 0x00000001, 0x01000000, 0x00010000, 0x00000100 };
+    word w5B[4] = { 0x00000100, 0x00010000, 0x00000001, 0x01000001 };
+    word wEF[4] = { 0x01010000, 0x00000101, 0x01000100, 0x00010000 };
     vector x;
     int n;
     word acc = 0;
@@ -135,7 +124,7 @@ static word mds(word w)
 	v = gf_shr(v, 0x169);
 	xEF ^= v;
 	x5B ^= v;
-	acc ^= x01*m01[n].word | x5B*m5B[n].word | xEF*mEF[n].word;
+	acc ^= x01*w01[n] | x5B*w5B[n] | xEF*wEF[n];
     }
     return acc;
 #endif
