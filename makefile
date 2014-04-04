@@ -1,4 +1,7 @@
 CHIP = attiny45
+SIMAVR_ROOT = /tmp/avr
+SIMAVR_INCLUDE = ${SIMAVR_ROOT}/include/simavr
+SIMAVR_LIB = ${SIMAVR_ROOT}/lib
 
 tinyrom: 2fish_avr.o
 	avr-ld $< -o $@
@@ -9,3 +12,5 @@ megarom: 2fish_avr.o
 .s.o:
 	avr-as -mmcu ${CHIP} -o $@ $<
 
+driver: driver.c
+	c99 -O3 $< -I ${SIMAVR_INCLUDE} -L ${SIMAVR_LIB} -lelf -lsimavr -o $@
