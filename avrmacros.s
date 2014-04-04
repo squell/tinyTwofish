@@ -150,16 +150,16 @@ IF=7
 .endr
 .endm
 
-.macro xchg a, b, tmp=r0
-    mov tmp, a
-    mov a, b
-    mov b, tmp
+.macro xchg a, b
+    eor a, b
+    eor b, a
+    eor a, b
 .endm
 
-.macro xchgq a, b, tmp=r0
+.macro xchgq a, b
 .ifnc <a>, <b>
 .irp i, 0,1,2,3
-    xchg ((a)&~3)+((a)+i)%4, ((b)&~3)+((b)+i)%4, tmp
+    xchg ((a)&~3)+((a)+i)%4, ((b)&~3)+((b)+i)%4
 .endr
 .endif
 .endm
