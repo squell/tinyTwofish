@@ -25,30 +25,32 @@
 
 ; TODO FIXME WORK IN PROGRESS
 
-KEY_SIZE = 256
+KEY_SIZE = 128
 MDS_POLY = 0x169
 RS_POLY  = 0x14D
 
+KAT_TEST = 0
+
 /* we can share code between keysched. and encryption. should we? 
    note that this is incompatible with 'UNROLL_round_h' */
-INLINE_round_g = 1
+INLINE_round_g = 0
 
 /* options controlling various size vs. speed tradeoffs */
-UNROLL_round_h = 1
-UNROLL_round_g = 1
-UNROLL_keypair = 1
-UNROLL_enc     = 1
-UNROLL_swap    = 1
+UNROLL_round_h = 0
+UNROLL_round_g = 0
+UNROLL_keypair = 0
+UNROLL_enc     = 0
+UNROLL_swap    = 0
 
 /* precompute the roundkeys */
-TAB_key = 1
+TAB_key = 0
 /* precompute the sbox; not possible in sram on attiny */
 TAB_sbox = 0
 /* use a precomputed qbox */
 TAB_q = 1
 
 /* should we "undo" the last swap? this is pointless; has no effect unless UNROLL_enc */
-UNDO_swap = 1
+UNDO_swap = 0
 
 /* where do we expect the tables to reside? */
 SRAM_sbox = 1
@@ -600,7 +602,7 @@ local roll_start, roll_loop
 .endif
 .if UNROLL_swap
     .irp i, 0,1,2,3,4,5,6,7
-    xchg i+a, i+a+8, r25
+    xchg i+a, i+a+8
     .endr
 .else
 local loop
@@ -635,7 +637,7 @@ loop:
  * r4..r19: encrypted block
  */
 
-; TODO: make two macro's to seperate the whitening stages from the main loop to make the code more readable
+; TODO: make two macros to seperate the whitening stages from the main loop to make the code more readable
 twofish_enc:
 
     ; pre-whitening
@@ -800,6 +802,12 @@ main:
     .if TAB_q && SRAM_q
     init_q
     .endif
+    .if KAT_TEST
+    rcall kat
+    cli
+    sleep
+    .endif
+
     la Y, mkey
     loadram Y, _mkey, KEY_SIZE/8
     la X, schedule
@@ -858,7 +866,7 @@ qbox:
     .byte 0x22, 0xc9, 0xc0, 0x9b, 0x89, 0xd4, 0xed, 0xab, 0x12, 0xa2, 0x0d, 0x52, 0xbb, 0x02, 0x2f, 0xa9 
     .byte 0xd7, 0x61, 0x1e, 0xb4, 0x50, 0x04, 0xf6, 0xc2, 0x16, 0x25, 0x86, 0x56, 0x55, 0x09, 0xbe, 0x91
 .else
-.p2align 8 ;lame
+.p2align 6
 qperm:
     ; high nibble: even permutation; low nibble: odd permutation
     ;q0
