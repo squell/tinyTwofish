@@ -311,10 +311,10 @@ start:
     .if KEY_SIZE > 192
     lsl tmpw+1
     br ne loop
+    .endif
+    .endif
     .if ofs
     sbiw Y_L, ofs
-    .endif
-    .endif
     .endif                      
 .endif
 .endm
