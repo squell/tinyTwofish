@@ -18,4 +18,4 @@ driver: driver.c
 	c99 ${CFLAGS} $< -I ${SIMAVR_INCLUDE} -L ${SIMAVR_LIB} -lsimavr -lelf -o $@
 
 selftest:
-	! ./exhaustive_test.sh 2> /dev/null | grep -m 1 ''
+	! ./exhaustive_test.sh | grep -m 1 ''
