@@ -23,34 +23,32 @@
 
 .altmacro
 
-; TODO FIXME WORK IN PROGRESS
-
 KEY_SIZE = 128
 MDS_POLY = 0x169
 RS_POLY  = 0x14D
 
-KAT_TEST = 0
+KAT_TEST = 1
 
 /* we can share code between keysched. and encryption. should we? 
    note that this is incompatible with 'UNROLL_round_h' */
-INLINE_round_g = 0
+INLINE_round_g = 1
 
 /* options controlling various size vs. speed tradeoffs */
-UNROLL_round_h = 0
-UNROLL_round_g = 0
-UNROLL_keypair = 0
-UNROLL_enc     = 0
-UNROLL_swap    = 0
+UNROLL_round_h = 1
+UNROLL_round_g = 1
+UNROLL_keypair = 1
+UNROLL_enc     = 1
+UNROLL_swap    = 1
 
 /* precompute the roundkeys */
-TAB_key = 0
+TAB_key = 1
 /* precompute the sbox; not possible in sram on attiny */
 TAB_sbox = 0
 /* use a precomputed qbox */
 TAB_q = 1
 
 /* should we "undo" the last swap? this is pointless; has no effect unless UNROLL_enc */
-UNDO_swap = 0
+UNDO_swap = 1
 
 /* where do we expect the tables to reside? */
 SRAM_sbox = 1
@@ -258,6 +256,7 @@ loop:
 .equ twofish_reserve, KEY_SIZE/16 + 40*4*TAB_key
 
 .macro round_h dst, src, step=<8+0>, tmpw=
+;.print "round_h dst, src, step, tmpw"
 #? Y -> key material
 local loop, start, k128, k192, stride, ofs
 .if TAB_sbox == 1
@@ -306,7 +305,7 @@ loop:
 start:
     qxlat dst, tmpw+1, <7,4,6,5>
     lsl tmpw+1                       ; the bit pattern is constructed to control the loop
-    br cc loop           
+    br cc loop
     .if KEY_SIZE > 128
     br hs loop
     .if KEY_SIZE > 192
@@ -314,10 +313,10 @@ start:
     br ne loop
     .if ofs
     sbiw Y_L, ofs
+    .endif
+    .endif
+    .endif                      
 .endif
-.endif
-.endif
-.endif                      
 .endm
 
 .macro round_g_init force=0
@@ -385,7 +384,7 @@ loop:
 ; not a logical thing to want to do in both cases.
 
 .macro keypair kreg, num, pos=0
-;.print "keypair kreg, num"
+;.print "keypair kreg, num, pos"
 #? Y -> key material
 local i, loop, exit, tmp            
 .if (UNROLL_keypair || TAB_sbox) && !INLINE_round_g
@@ -886,11 +885,6 @@ _mkey:
 .byte 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10
 .byte 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77
 .byte 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff
-
-sbox_key:
-.int 0xDEADBEEF, 0xCAFEBABE, 0x01234567, 0x33221100
-round_keys:
-.int 0x52C54DDE,0x11F0626D,0x7CAC9D4A,0x4D1B4AAA,0xB7B83A10,0x1E7D0BEB,0xEE9C341F,0xCFE14BE4,0xF98FFEF9,0x9C5B3C17,0x15A48310,0x342A4D81,0x424D89FE,0xC14724A7,0x311B834C,0xFDE87320,0x3302778F,0x26CD67B4,0x7A6C6362,0xC2BAF60E,0x3411B994,0xD972C87F,0x84ADB1EA,0xA7DEE434,0x54D2960F,0xA2F7CAA8,0xA6B8FF8C,0x8014C425,0x6A748D1C,0xEDBAF720,0x928EF78C,0x0338EE13,0x9949D6BE,0xC8314176,0x07C07D68,0xECAE7EA7,0x1FE71844,0x85C05C89,0xF298311E,0x696EA672
 
 .if TAB_sbox
 .comm sbox, 1024, 256
