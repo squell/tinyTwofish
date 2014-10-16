@@ -27,7 +27,7 @@ KEY_SIZE = 128
 MDS_POLY = 0x169
 RS_POLY  = 0x14D
 
-KAT_TEST = 1
+KAT_TEST = 0
 
 /* we can share code between keysched. and encryption. should we? 
    note that this is incompatible with 'UNROLL_round_h' */
@@ -51,7 +51,6 @@ TAB_q = 1
 UNDO_swap = 1
 
 /* where do we expect the tables to reside? */
-SRAM_sbox = 1
 SRAM_q = 0
 
 .global twofish_key, twofish_enc, twofish_reserve
@@ -131,7 +130,7 @@ loop:
 
 /* perform qbox lookup & (optional) copy */
 .macro qxlati d, select, r=n/a
-.if TAB_q == 0
+.if !TAB_q
 .error "Incompatible: TAB_q=0 but UNROLL_round_h=1"
 .endif
 #?  ldi r31, hi8(table)
@@ -163,7 +162,7 @@ i=0
     .else
     mov r30, ((r)&~3)+((r)+i)%4
     .endif
-    load d+i, Z, SRAM_sbox
+    ld d+i, Z
     subi r31, 2*j-1
     i=i+1
 .endr
@@ -497,7 +496,7 @@ twofish_key:
 .endif
     sbiw Y_L, KEY_SIZE/16
 
-.if TAB_sbox && SRAM_sbox   ; precompute the sboxes.
+.if TAB_sbox   		    ; precompute the sboxes.
     la X, sbox
     clr r20
     round_g_init 1
@@ -886,9 +885,9 @@ _mkey:
 .byte 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77
 .byte 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff
 
+.comm mkey, KEY_SIZE/8, 32
+
 .if TAB_sbox
 .comm sbox, 1024, 256
 .endif
-.comm mkey, KEY_SIZE/8, 32
 .comm schedule, twofish_reserve
-
