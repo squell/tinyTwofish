@@ -1,4 +1,4 @@
-OPTt="INLINE_round_g UNROLL_round_h UNROLL_round_g UNROLL_keypair UNROLL_enc UNROLL_swap  TAB_key TAB_sbox TAB_q SRAM_q"
+OPTS="INLINE_round_g UNROLL_round_h UNROLL_round_g UNROLL_keypair UNROLL_enc UNROLL_swap  TAB_key TAB_sbox TAB_q SRAM_q"
 #OPTS="INLINE_round_g UNROLL_round_h UNROLL_round_g UNROLL_keypair TAB_key TAB_sbox"
 
 MCU=atmega644
