@@ -18,7 +18,7 @@ test_script() {
     cat <<script
 	if make -B -s . -C /tmp megakat
 	then
-	    ./driver /tmp/megarom $MCU | tail -n1 | grep "$2" 1> /dev/null || echo failed: KEY_SIZE=$1 $(for flag in $OPTS; do echo -n " $flag=\$$flag"; done)
+	    ./driver /tmp/megakat $MCU | tail -n1 | grep "$2" 1> /dev/null || echo failed: KEY_SIZE=$1 $(for flag in $OPTS; do echo -n " $flag=\$$flag"; done)
 	else
 	    echo 1>&2 not run
 	fi
