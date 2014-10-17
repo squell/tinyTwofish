@@ -257,3 +257,15 @@ I&op&_&a&_&b&_&c&_&d&:
     rcall I&op&_&a&_&b&_&c&_&d&
 .endm
 
+.macro dump load org
+;.print "dump load org"
+local i
+    la Z, org
+    i=0
+    .rept 30
+    load i, Z+
+    i=i+1
+    .endr
+    ser r31
+.endm
+

@@ -23,50 +23,24 @@
 
 .altmacro
 
-KEY_SIZE = 128
-MDS_POLY = 0x169
-RS_POLY  = 0x14D
-
-KAT_TEST = 0
-
-/* we can share code between keysched. and encryption. should we? 
-   note that this is incompatible with 'UNROLL_round_h' */
-INLINE_round_g = 1
-
-/* options controlling various size vs. speed tradeoffs */
-UNROLL_round_h = 1
-UNROLL_round_g = 1
-UNROLL_keypair = 1
-UNROLL_enc     = 1
-UNROLL_swap    = 1
-
-/* precompute the roundkeys */
-TAB_key = 1
-/* precompute the sbox; not possible in sram on attiny */
-TAB_sbox = 0
-/* use a precomputed qbox */
-TAB_q = 1
-
-/* should we "undo" the last swap? this is pointless; has no effect unless UNROLL_enc */
-UNDO_swap = 1
-
-/* where do we expect the tables to reside? */
-SRAM_q = 0
-
-.global twofish_key, twofish_enc, twofish_reserve
-
+.include "2fish_avr.cfg"
 .include "avrmacros.s"
 
-.text
-.subsection 1
+.global twofish_init, twofish_key, twofish_enc
+.global schedule
 
-FISH_START=.
+.text 512
+
+FISH_START = .
 
 .macro pht a, b
 ;.print "pht a, b"
     addq a, b
     addq b, a
 .endm
+
+MDS_POLY = 0x169
+RS_POLY  = 0x14D
 
 .macro gf_shl reg, poly
 ;.print "gf_shl reg, poly"
@@ -250,9 +224,9 @@ loop:
 .endm
 
 /* you are not required to understand this */
-.equ twofish_cookie, (0b10100110<<((288-KEY_SIZE)/42))&0xFF
+.equ twofish_cookie, (0b10100110<<((300-KEY_SIZE)/50))&0xFF
 
-.equ twofish_reserve, KEY_SIZE/16 + 40*4*TAB_key
+.equ twofish_schedule_size, KEY_SIZE/16 + 40*4*TAB_key
 
 .macro round_h dst, src, step=<8+0>, tmpw=
 ;.print "round_h dst, src, step, tmpw"
@@ -449,7 +423,7 @@ loop:
 /*
  * Y -> pointer to *end* of master key
  *      (really, this makes a lot of sense)
- * X -> holding area for key material
+ * X -> holding area for key material (if !STATIC)
  * ---
  * Y -> *end* of RS-key, start of roundkeys
  *
@@ -629,13 +603,16 @@ loop:
 .endif
 
 /*
- * Y -> pointer to start of (round)key/end of RS-key
+ * Y -> pointer to start of (round)key/end of RS-key (if !STATIC)
  * r4..r19: data to encrypt
  * ---
+ * Y -> unchanged (if !STATIC)
  * r4..r19: encrypted block
  */
 
-; TODO: make two macros to seperate the whitening stages from the main loop to make the code more readable
+; TODO: in the whitening steps, we waste instructions
+; TODO r16 stuff in keypair_wrap
+
 twofish_enc:
 
     ; pre-whitening
@@ -677,7 +654,7 @@ L_enc_loop:
 .endif
 .if TAB_key
     sub Z_L, Y_L                ; deduce round from Y
-    cpi Z_L, twofish_reserve
+    cpi Z_L, twofish_schedule_size
 .else
     cpi r16, 40
 .endif
@@ -688,7 +665,6 @@ L_enc_loop:
 .endif
 
     ; post-whitening
-
 .if TAB_key
     adiw Y_L, KEY_SIZE/16+16   ; TODO OPT this can be avoided?
     .if UNROLL_enc && !UNDO_swap
@@ -700,6 +676,7 @@ L_enc_loop:
     eorldq k, Y+
 	.endr
     .endif
+    sbiw Y_L, KEY_SIZE/16+32   ; TODO OPT this can be avoided?
     pop Z_L
     pop Z_H
 .else
@@ -717,20 +694,9 @@ L_enc_loop:
     eorq j+6, 24
     .endr
 .endif
+empty_function:
     ret
     .size twofish_enc, .-twofish_enc
-
-.macro dump load org
-;.print "dump load org"
-local i
-    la Z, org
-    i=0
-    .rept 30
-    load i, Z+
-    i=i+1
-    .endr
-    ser r31
-.endm
 
 ; this is useful if we want the qtable to reside in sram and keep codesize down
 ; and of course, to test the code
@@ -749,84 +715,21 @@ local i
     brtc 2b
 .endm
 
+.if TAB_q && SRAM_q
+twofish_init:
+    init_q
+    ret
+.else
+twofish_init = empty_function
+.endif
+
+FISH_END = .
+FISH_PROGSIZE = .-FISH_START
+
 .text 0x4000
 
-; known answer tests.
+FISH_DATASTART = .
 
-.data 
-katkey:  .space KEY_SIZE/8
-katdata: .space 16
-.previous
-kat:
-    clr r20                           ; setup
-    la Y, katdata
-    setmem Y, 16, r20, r21
-    la Y, katkey
-    setmem Y, KEY_SIZE/8, r20, r21
-
-1:  push r20
-    la X, schedule        
-    .if TAB_key
-    la Y, katkey+KEY_SIZE/8
-    .else
-    la Y, schedule+KEY_SIZE/16
-    loadram Y, katkey, KEY_SIZE/8, ld
-    .endif
-    rcall twofish_key                    ; produce schedule
-
-    copy katkey, katkey+16, KEY_SIZE/8-16; update the masterkey
-    copy katdata, katkey, 16
-
-    la X, 4                              ; encrypt
-    loadram X, katdata, 16, ld
-    la Y, schedule
-    rcall twofish_enc
-
-    la X, katdata                       ; save result and loop
-    loadram X, 4, 16, ld
-    pop r20
-    inc r20
-    cpi r20, 49
-    brlo 1b
-
-    ret
-
-.text 0x2000
-FISH_PROGSIZE = .-FISH_START
-FISH_CODEEND = .
-
-.text 
-main:
-    .if TAB_q && SRAM_q
-    init_q
-    .endif
-    .if KAT_TEST
-    rcall kat
-    cli
-    sleep
-    .endif
-
-    la Y, mkey
-    loadram Y, _mkey, KEY_SIZE/8
-    la X, schedule
-    rcall twofish_key
-
-    .if !TAB_key
-    la X, schedule+KEY_SIZE/16
-    loadram X, _mkey, KEY_SIZE/8
-    .endif
-
-    la Z, 4
-    clr r0
-    setmem Z, 16, r0, r20
-
-    rcall twofish_enc
-
-    cli
-    sleep
-    .size main, .-main
-
-.subsection 0x2000
 .if TAB_q && !SRAM_q
 .p2align 9
 qbox:
@@ -877,17 +780,12 @@ qperm:
 .endif
 
 FISH_DATAEND = .
+FISH_DATASIZE = .-FISH_DATASTART
+
 FISH_SIZE = .-FISH_START
-
-_mkey:
-.byte 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef
-.byte 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10
-.byte 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77
-.byte 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff
-
-.comm mkey, KEY_SIZE/8, 32
 
 .if TAB_sbox
 .comm sbox, 1024, 256
 .endif
-.comm schedule, twofish_reserve
+.comm schedule, twofish_schedule_size
+
