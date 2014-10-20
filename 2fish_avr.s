@@ -746,6 +746,7 @@ empty_function:
 twofish_init:
     init_q
     ret
+    .size twofish_init, .-twofish_init
 .else
 twofish_init = empty_function
 .endif
