@@ -689,17 +689,15 @@ L_enc_loop:
     ; post-whitening
 .if TAB_key
 ;TODO
-    adiw Y_L, KEY_SIZE/16+16   ; TODO OPT this can be avoided?
     .if UNROLL_enc && !UNDO_swap
 	.irp k, 12,16,4,8
-    eorldq k, Y+
+    eorlddq k, Y+k-4+KEY_SIZE/16+16
 	.endr
     .else
 	.irp k, 4,8,12,16
-    eorldq k, Y+
+    eorlddq k, Y+k-4+KEY_SIZE/16+16
 	.endr
     .endif
-    sbiw Y_L, KEY_SIZE/16+32   ; TODO OPT this can be avoided?
     pop Z_L
     pop Z_H
 .else
