@@ -45,7 +45,6 @@ startup:
     setmem Z, 16, r0, r20
 
     rcall twofish_enc
-    la X, twofish_roundkeys
 
     cli
     sleep
