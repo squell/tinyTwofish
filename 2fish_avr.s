@@ -605,7 +605,7 @@ loop:
 
 .macro whiten_keypair arg=dummy
 .if UNROLL_whiten
-.warning "Ignoring UNROLL_whiten=1 since TAB_key=0"
+.error  "Ignoring UNROLL_whiten=1 since TAB_key=0"
 .endif
 .if !INLINE_whiten
     push r0
