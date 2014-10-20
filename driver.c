@@ -33,13 +33,21 @@
 avr_t * avr = NULL;
 avr_vcd_t vcd_file;
 
+unsigned int min_SP = -1;
+
 void dump_avr(void) 
+{
+    unsigned SP = avr->data[0x5E]*256 + avr->data[0x5D];
+    if(SP < min_SP) min_SP = SP;
+}
+
+void dump_avr2(void) 
 {
     printf("%10lld: ", avr->cycle);
     for(int j=0; j < 1; j++) {
 	for(int i=0; i < 32; i++)
 	    printf("%02x ", avr->data[i+j*32]);
-	printf("SP=%04x\n", avr->data[0x5E]*256 + avr->data[0x5D]);
+	printf("SP=%04x\n", min_SP);
     }
 }
 
@@ -79,4 +87,5 @@ int main(int argc, char *argv[])
 		if(state == cpu_Running || state == cpu_Step)
 		    dump_avr();
 	}
+	dump_avr2();
 }

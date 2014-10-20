@@ -29,11 +29,19 @@
 .text 
 startup:
     rcall twofish_init
+    .if STATE < 1 
+    cli
+    sleep
+    .endif
 
     la Y, mkey
     loadram Y, _mkey, KEY_SIZE/8
     la X, twofish_roundkeys
     rcall twofish_key
+    .if STATE < 2
+    cli
+    sleep
+    .endif
 
     .if !TAB_key
     la X, twofish_roundkeys+KEY_SIZE/16

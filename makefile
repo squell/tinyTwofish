@@ -6,21 +6,25 @@ SIMAVR_LIB = ${SIMAVR_ROOT}/lib
 
 CFLAGS = -O3
 
-tinyrom: example.o 2fish_avr.o
-	avr-ld example.o 2fish_avr.o -o $@
+all: rom0 rom1 rom2
 
-megarom: example.o 2fish_avr.o
-	avr-ld example.o 2fish_avr.o -Tdata 0x800100 -o $@
+rom0: example0.o 2fish_avr.o
+	avr-ld example0.o 2fish_avr.o -Tdata 0x800100 -o $@
 
-tinykat: kat_test.o 2fish_avr.o
-	avr-ld kat_test.o 2fish_avr.o -o $@
+rom1: example1.o 2fish_avr.o
+	avr-ld example1.o 2fish_avr.o -Tdata 0x800100 -o $@
 
-megakat: kat_test.o 2fish_avr.o
-	avr-ld kat_test.o 2fish_avr.o -Tdata 0x800100 -o $@
+rom2: example2.o 2fish_avr.o
+	avr-ld example2.o 2fish_avr.o -Tdata 0x800100 -o $@
 
 2fish_avr.o: 2fish_avr.s 2fish_avr.cfg
-example.o: example.s 2fish_avr.cfg
-kat_test.o: kat_test.s 2fish_avr.cfg
+
+example0.o: example.s 2fish_avr.cfg
+	avr-as --defsym STATE=0 -mmcu ${CHIP} -o $@ $<
+example1.o: example.s 2fish_avr.cfg
+	avr-as --defsym STATE=1 -mmcu ${CHIP} -o $@ $<
+example2.o: example.s 2fish_avr.cfg
+	avr-as --defsym STATE=2 -mmcu ${CHIP} -o $@ $<
 
 .s.o:
 	avr-as -mmcu ${CHIP} -o $@ $<
