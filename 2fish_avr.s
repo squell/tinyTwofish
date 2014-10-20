@@ -605,6 +605,24 @@ loop:
     ; but this just makes the code yet more complicated for no good reason
 .endif
 
+.macro whiten_keypair arg=dummy
+.if UNROLL_whiten
+.warning "Ignoring UNROLL_whiten=1 since TAB_key=0"
+.endif
+.if !INLINE_whiten
+    push r0
+.endif
+; 19 instructions
+    .irp j, 4, 12 
+    shared keypair_wrap, 20, r16
+    .if j==12
+    pop r16
+    .endif
+    eorq j, 20
+    eorq j+6, 24
+    .endr
+.endm
+
 /*
  * Y -> pointer to RS-key + roundkeys (if !STATIC)
  * r4..r19: data to encrypt
@@ -614,6 +632,7 @@ loop:
  */
 
 ; TODO: in the whitening steps, we waste instructions
+; TODO: undo_swap=1? elegant solution
 
 twofish_enc:
 
@@ -630,16 +649,15 @@ twofish_enc:
     push Z_L
 .endif
 .if !TAB_key
+    .if INLINE_whiten
     push r16                    ; round counter overlaps with data; not ideal6
-    .irp j, 4,12                ; OPT we could save a few bytes by rolling this loop
-    ldi r16, (j-4)/4            
-    shared keypair_wrap, 20, r16
-    .if j == 12
-    pop r16
+    clr r16
+    whiten_keypair r16
+    .else
+    mov r0, r16
+    clr r16
+    shared whiten_keypair r16
     .endif
-    eorq j,   20
-    eorq j+6, 24                ; remember: odd keys are unrotated.
-    .endr
     push r16
     ldi r16, 8
 .endif
@@ -670,6 +688,7 @@ L_enc_loop:
 
     ; post-whitening
 .if TAB_key
+;TODO
     adiw Y_L, KEY_SIZE/16+16   ; TODO OPT this can be avoided?
     .if UNROLL_enc && !UNDO_swap
 	.irp k, 12,16,4,8
@@ -684,11 +703,19 @@ L_enc_loop:
     pop Z_L
     pop Z_H
 .else
+    ldi r16, 4
+    .if INLINE_whiten
+    whiten_keypair r16
+    .else
+    pop r0
+    shared whiten_keypair r16
+    .endif
+    .if 0 ; DEAD CODE; to remove
     .irp j, 4, 12 
     .if !UNROLL_enc || UNDO_swap
-    ldi r16, 3+j/4
+    ldi r16, 4+(j-4)/4
     .else        
-    ldi r16, 7-j/4
+    ldi r16, 6-(j-4)/4
     .endif
     shared keypair_wrap, 20, r16
     .if j==12
@@ -697,6 +724,7 @@ L_enc_loop:
     eorq j, 20
     eorq j+6, 24
     .endr
+    .endif
 .endif
 empty_function:
     ret
