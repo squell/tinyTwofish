@@ -749,6 +749,7 @@ twofish_init:
     .size twofish_init, .-twofish_init
 .else
 twofish_init = empty_function
+    .size twofish_init, 0
 .endif
 
 FISH_END = .
