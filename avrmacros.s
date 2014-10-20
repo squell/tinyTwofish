@@ -257,8 +257,20 @@ I&op&_&a&_&b&_&c&_&d&:
     rcall I&op&_&a&_&b&_&c&_&d&
 .endm
 
+/* for initializing the sram data segment from flash; if any */
+.macro init_data
+.if __data_load_start != __data_load_end
+la Z, __data_load_start
+la Y, .data
+1: 
+lpm X_L, Z+
+st Y+, X_L
+cpi Z_L, __data_load_end
+brne 1b
+.endif
+.endm
+
 .macro dump load org
-;.print "dump load org"
 local i
     la Z, org
     i=0
@@ -268,4 +280,3 @@ local i
     .endr
     ser r31
 .endm
-
