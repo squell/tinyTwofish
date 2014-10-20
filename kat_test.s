@@ -26,11 +26,11 @@
 
 .global kat
 
-.data 
+.section .bss
 katkey:  .space KEY_SIZE/8
 katdata: .space 16
 
-.text
+.section .text
 
     rcall twofish_init
 kat:
