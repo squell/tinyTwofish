@@ -47,7 +47,7 @@ void dump_avr2(void)
     for(int j=0; j < 1; j++) {
 	for(int i=0; i < 32; i++)
 	    printf("%02x ", avr->data[i+j*32]);
-	printf("SP=%04x\n", min_SP);
+	printf("SP=%d\n", min_SP);
     }
 }
 
