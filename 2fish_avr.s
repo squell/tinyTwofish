@@ -576,6 +576,7 @@ local roll_start, roll_loop
     mov r8, r25
 .endif
 .if UNROLL_swap
+    ; 24 instrs
     .irp i, 0,1,2,3,4,5,6,7
     xchg i+a, i+a+8
     .endr
@@ -594,14 +595,9 @@ loop:
 .endif
 .endm
 
-.if !UNROLL_enc && UNDO_swap
-    .warning "Ignoring UNDO_swap since UNROLL_enc = 0"
-    UNDO_swap=0
-.endif
-
 .if TAB_sbox && !TAB_key
     .error "Incompatible: TAB_sbox = 1 but TAB_key = 0"
-    ; we could do this: swap r31 between qbox and sbox constatnly
+    ; we could do this: swap r31 between qbox and sbox constantly
     ; but this just makes the code yet more complicated for no good reason
 .endif
 
@@ -649,9 +645,6 @@ loop:
  * Y -> unchanged (if !STATIC)
  * r4..r19: encrypted block
  */
-
-; TODO: in the whitening steps, we waste instructions
-; TODO: undo_swap=1? elegant solution
 
 twofish_enc:
 
@@ -702,7 +695,7 @@ L_enc_loop:
 .endif
     br lo, L_enc_loop
 
-.if UNDO_swap
+.if OMIT_last_swap == UNROLL_enc
     swap_halves 4
 .endif
 
@@ -715,17 +708,6 @@ L_enc_loop:
     shared whiten_tab 0
     sbiw Y_L, 16
     .endif
-    .if 0
-    .if UNROLL_enc && !UNDO_swap
-	.irp k, 12,16,4,8
-    eorlddq k, Y+k-4+KEY_SIZE/16+16
-	.endr
-    .else
-	.irp k, 4,8,12,16
-    eorlddq k, Y+k-4+KEY_SIZE/16+16
-	.endr
-    .endif
-    .endif
     pop Z_L
     pop Z_H
 .else
@@ -735,21 +717,6 @@ L_enc_loop:
     .else
     pop r0
     shared whiten_keypair r16
-    .endif
-    .if 0 ; DEAD CODE; to remove
-    .irp j, 4, 12 
-    .if !UNROLL_enc || UNDO_swap
-    ldi r16, 4+(j-4)/4
-    .else        
-    ldi r16, 6-(j-4)/4
-    .endif
-    shared keypair_wrap, 20, r16
-    .if j==12
-    pop r16
-    .endif
-    eorq j, 20
-    eorq j+6, 24
-    .endr
     .endif
 .endif
 empty_function:
