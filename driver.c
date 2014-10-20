@@ -39,7 +39,7 @@ void dump_avr(void)
     for(int j=0; j < 1; j++) {
 	for(int i=0; i < 32; i++)
 	    printf("%02x ", avr->data[i+j*32]);
-	printf("\n");
+	printf("SP=%04x\n", avr->data[0x5E]*256 + avr->data[0x5D]);
     }
 }
 
@@ -47,7 +47,7 @@ int main(int argc, char *argv[])
 {
 	elf_firmware_t f;
 	const char * fname = argv[1]?argv[1]:"firmware.axf";
-	const char * mcu   = argv[1]&&argv[2]?argv[2]:"attiny85";
+	const char * mcu   = argv[1]&&argv[2]?argv[2]:"attiny45";
 	int debug = argc > 3;
 
 	printf("Firmware pathname is %s\n", fname);
