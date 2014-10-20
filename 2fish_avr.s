@@ -639,12 +639,11 @@ twofish_enc:
     ; pre-whitening
 
 .if TAB_key
-    movw Z_L, Y_L
-    adiw Z_L, KEY_SIZE/16
     .irp k, 4,8,12,16
-    eorldq k, Z+
+    eorlddq k, Y+k-4+KEY_SIZE/16
     .endr
-    adiw Z_L, 16
+    movw Z_L, Y_L
+    adiw Z_L, KEY_SIZE/16+32
     push Z_H
     push Z_L
 .endif
