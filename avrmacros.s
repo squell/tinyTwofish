@@ -95,8 +95,7 @@ IF=7
 .if (a%2)==0 && (b%2)==0
     movw a, b
     movw (a&&~3)+(a+2)%4, (b&&~3)+(b+2)%4
-.else 
-    ; we could save an instruction here by case analysis
+.else
     zip mov a, b 
 .endif
 .endm
@@ -156,11 +155,17 @@ IF=7
     eor a, b
 .endm
 
-.macro xchgq a, b
-.ifnc <a>, <b>
-.irp i, 0,1,2,3
-    xchg ((a)&~3)+((a)+i)%4, ((b)&~3)+((b)+i)%4
-.endr
+.macro xchgq a, b, tmp=
+.ifc <tmp>, <>
+    .ifnc <a>, <b>
+    .irp i, 0,1,2,3
+	xchg ((a)&~3)+((a)+i)%4, ((b)&~3)+((b)+i)%4
+    .endr
+    .endif
+.else
+    movq tmp, a
+    movq a, b
+    movq b, tmp
 .endif
 .endm
 

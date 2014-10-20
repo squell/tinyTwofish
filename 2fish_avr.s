@@ -344,7 +344,7 @@ loop:
 ;.print "round_g_rot out, src"
     ; assume the caller set up the stride in 'out'
     round_g out, src, out
-    xchgq src, src+7
+    xchgq src, src+7, 0
 .endm
 
 ; note: we ignore INLINE_round_g=0 in keypair if UNROLL_round_h=1
@@ -531,7 +531,7 @@ local roll_start, roll_loop
 .else
     clr r24  ; set the 'step' for the round_g function to zero
     shared round_g_rot, %tmp+4, %in
-    xchgq tmp, tmp+4
+    xchgq tmp, tmp+4, 0
     clr r24
     shared round_g_rot, %tmp+4, %in
 .endif
