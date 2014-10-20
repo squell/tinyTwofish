@@ -32,11 +32,11 @@ startup:
 
     la Y, mkey
     loadram Y, _mkey, KEY_SIZE/8
-    la X, schedule
+    la X, twofish_roundkeys
     rcall twofish_key
 
     .if !TAB_key
-    la X, schedule+KEY_SIZE/16
+    la X, twofish_roundkeys+KEY_SIZE/16
     loadram X, _mkey, KEY_SIZE/8
     .endif
 
@@ -45,6 +45,7 @@ startup:
     setmem Z, 16, r0, r20
 
     rcall twofish_enc
+    la X, twofish_roundkeys
 
     cli
     sleep

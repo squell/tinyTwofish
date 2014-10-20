@@ -27,7 +27,6 @@
 .include "avrmacros.s"
 
 .global twofish_init, twofish_key, twofish_enc
-.global schedule
 
 .text 512
 
@@ -226,8 +225,6 @@ loop:
 /* you are not required to understand this */
 .equ twofish_cookie, (0b10100110<<((300-KEY_SIZE)/50))&0xFF
 
-.equ twofish_schedule_size, KEY_SIZE/16 + 40*4*TAB_key
-
 .macro round_h dst, src, step=<8+0>, tmpw=
 ;.print "round_h dst, src, step, tmpw"
 #? Y -> key material
@@ -295,7 +292,7 @@ start:
 .macro round_g_init force=0
 .if UNROLL_round_g || force
     .if TAB_sbox == 1
-    ldi r31, hi8(sbox)
+    ldi r31, hi8(twofish_sbox)
     .elseif TAB_q 
     ldi r31, hi8(qbox)
     .else
@@ -353,7 +350,7 @@ loop:
 ; note: we ignore INLINE_round_g=0 in keypair if UNROLL_round_h=1
 ; or TAB_sbox=1 -- in these cases the keyschedule uses 
 ; different calls or different round_g functions
-; MAYBE TODO: we could still share the MDS computation; but this is
+; MAYBE: we could still share the MDS computation; but this is
 ; not a logical thing to want to do in both cases.
 
 .macro keypair kreg, num, pos=0
@@ -425,13 +422,17 @@ loop:
  *      (really, this makes a lot of sense)
  * X -> holding area for key material (if !STATIC)
  * ---
- * Y -> *end* of RS-key, start of roundkeys
+ * Y -> holding area for key material
  *
  * All keys are stored in reverse order.
  */
 
+; MAYBE: save SIZE/16 bytes of SRAM if TAB_sbox?
 twofish_key:
     TAB_sbox = TAB_sbox*2   ; inside this function, always use the original round_g
+.if STATIC
+    la X, twofish_roundkeys
+.endif
     ldi r20, KEY_SIZE/64
 1:  reedsolomon -Y
     .irp i, 0,1,2,3         ; order: stores the last sbox key first
@@ -471,9 +472,11 @@ twofish_key:
     sbiw Y_L, KEY_SIZE/16
 
 .if TAB_sbox   		    ; precompute the sboxes.
-    la X, sbox
+    la X, twofish_sbox
     clr r20
+    .if !UNROLL_round_g || !INLINE_round_g
     round_g_init 1
+    .endif
 1:  quad mov 0, r20
     round_h 0, 0, <4+0>, 16
     .irp i, 0,1,2           ; distribute the result over the sboxes
@@ -603,7 +606,7 @@ loop:
 .endif
 
 /*
- * Y -> pointer to start of (round)key/end of RS-key (if !STATIC)
+ * Y -> pointer to RS-key + roundkeys (if !STATIC)
  * r4..r19: data to encrypt
  * ---
  * Y -> unchanged (if !STATIC)
@@ -611,7 +614,6 @@ loop:
  */
 
 ; TODO: in the whitening steps, we waste instructions
-; TODO r16 stuff in keypair_wrap
 
 twofish_enc:
 
@@ -628,13 +630,15 @@ twofish_enc:
     push Z_L
 .endif
 .if !TAB_key
+    push r16                    ; round counter overlaps with data; not ideal6
     .irp j, 4,12                ; OPT we could save a few bytes by rolling this loop
-    push r16
-    ldi r16, (j-4)/4            ; round counter: overlaps with data; not ideal
+    ldi r16, (j-4)/4            
     shared keypair_wrap, 20, r16
+    .if j == 12
     pop r16
-    zip eor j,   20
-    zip eor j+6, 24             ; remember: odd keys are unrotated.
+    .endif
+    eorq j,   20
+    eorq j+6, 24                ; remember: odd keys are unrotated.
     .endr
     push r16
     ldi r16, 8
@@ -654,7 +658,7 @@ L_enc_loop:
 .endif
 .if TAB_key
     sub Z_L, Y_L                ; deduce round from Y
-    cpi Z_L, twofish_schedule_size
+    cpi Z_L, SCHEDULE_SIZE
 .else
     cpi r16, 40
 .endif
@@ -726,6 +730,7 @@ twofish_init = empty_function
 FISH_END = .
 FISH_PROGSIZE = .-FISH_START
 
+/* tables require alignment so put them at the end */
 .text 0x4000
 
 FISH_DATASTART = .
@@ -785,7 +790,10 @@ FISH_DATASIZE = .-FISH_DATASTART
 FISH_SIZE = .-FISH_START
 
 .if TAB_sbox
-.comm sbox, 1024, 256
+.comm twofish_sbox, 1024, 256
 .endif
-.comm schedule, twofish_schedule_size
-
+.if STATIC
+.comm twofish_roundkeys, SCHEDULE_SIZE
+.else
+.comm twofish_roundkeys, SCHEDULE_SIZE
+.endif
