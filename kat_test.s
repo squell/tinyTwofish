@@ -41,21 +41,21 @@ kat:
     setmem Y, KEY_SIZE/8, r20, r21
 
 1:  push r20
-    la X, schedule        
+    la X, twofish_roundkeys        
     .if TAB_key
     la Y, katkey+KEY_SIZE/8
     .else
-    la Y, schedule+KEY_SIZE/16
+    la Y, twofish_roundkeys+KEY_SIZE/16
     loadram Y, katkey, KEY_SIZE/8, ld
     .endif
-    rcall twofish_key                    ; produce schedule
+    rcall twofish_key                    ; produce twofish_roundkeys
 
     copy katkey, katkey+16, KEY_SIZE/8-16; update the masterkey
     copy katdata, katkey, 16
 
     la X, 4                              ; encrypt
     loadram X, katdata, 16, ld
-    la Y, schedule
+    la Y, twofish_roundkeys
     rcall twofish_enc
 
     la X, katdata                       ; save result and loop
