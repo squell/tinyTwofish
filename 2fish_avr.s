@@ -576,9 +576,11 @@ local roll_start, roll_loop
     mov r8, r25
 .endif
 .if UNROLL_swap
-    ; 24 instrs
-    .irp i, 0,1,2,3,4,5,6,7
-    xchg i+a, i+a+8
+    ; unrolled: 12 instr, 12 cycles
+    .irp i, 0,2,4,6
+    movw r20, a+i
+    movw a+i, a+8+i
+    movw a+8+i, r20
     .endr
 .else
 local loop
