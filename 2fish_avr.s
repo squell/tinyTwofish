@@ -623,6 +623,25 @@ loop:
     .endr
 .endm
 
+.macro whiten_tab ofs
+.if !UNROLL_whiten
+    .irp k, 4,8,12,16
+    eorlddq k, Y+k-4+KEY_SIZE/16+ofs
+    .endr
+.else
+    movw Z_L, Y_L
+    adiw Z_L, KEY_SIZE/16+ofs
+    ldi r20, 16
+    la X, 4
+1:  ld r1, X
+    ld r0, Z+
+    eor r1, r0
+    st X+, r1
+    dec r20
+    brne 1b
+.endif
+.endm
+
 /*
  * Y -> pointer to RS-key + roundkeys (if !STATIC)
  * r4..r19: data to encrypt
@@ -639,9 +658,11 @@ twofish_enc:
     ; pre-whitening
 
 .if TAB_key
-    .irp k, 4,8,12,16
-    eorlddq k, Y+k-4+KEY_SIZE/16
-    .endr
+    .if INLINE_whiten
+    whiten_tab 0
+    .else
+    shared whiten_tab 0
+    .endif
     movw Z_L, Y_L
     adiw Z_L, KEY_SIZE/16+32
     push Z_H
@@ -687,7 +708,14 @@ L_enc_loop:
 
     ; post-whitening
 .if TAB_key
-;TODO
+    .if INLINE_whiten
+    whiten_tab 16
+    .else
+    adiw Y_L, 16
+    shared whiten_tab 0
+    sbiw Y_L, 16
+    .endif
+    .if 0
     .if UNROLL_enc && !UNDO_swap
 	.irp k, 12,16,4,8
     eorlddq k, Y+k-4+KEY_SIZE/16+16
@@ -696,6 +724,7 @@ L_enc_loop:
 	.irp k, 4,8,12,16
     eorlddq k, Y+k-4+KEY_SIZE/16+16
 	.endr
+    .endif
     .endif
     pop Z_L
     pop Z_H
