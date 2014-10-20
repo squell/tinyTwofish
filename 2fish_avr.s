@@ -605,7 +605,7 @@ loop:
 
 .macro whiten_keypair arg=dummy
 .if UNROLL_whiten
-.error  "Ignoring UNROLL_whiten=1 since TAB_key=0"
+.error "Incompatible: UNROLL_whiten=1 but TAB_key=0"
 .endif
 .if !INLINE_whiten
     push r0
@@ -622,7 +622,7 @@ loop:
 .endm
 
 .macro whiten_tab ofs
-.if !UNROLL_whiten
+.if UNROLL_whiten
     .irp k, 4,8,12,16
     eorlddq k, Y+k-4+KEY_SIZE/16+ofs
     .endr
