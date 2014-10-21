@@ -604,8 +604,8 @@ loop:
 .endif
 
 .macro whiten_keypair arg=dummy
-.if UNROLL_whiten
-.error "Incompatible: UNROLL_whiten=1 but TAB_key=0"
+.if !UNROLL_whiten
+.error "Incompatible: UNROLL_whiten=0 but TAB_key=0"
 .endif
 .if !INLINE_whiten
     push r0
