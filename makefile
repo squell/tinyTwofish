@@ -6,6 +6,11 @@ SIMAVR_LIB = ${SIMAVR_ROOT}/lib
 
 CFLAGS = -O3
 
+default: driver tinyrom
+
+clean: 
+	rm -f *.o tinyrom megarom tinykat megakat
+
 tinyrom: example.o 2fish_avr.o
 	avr-ld example.o 2fish_avr.o -o $@
 
