@@ -1,7 +1,9 @@
 /*
   tinyTwofish implementation for tinyAVR (ATtiny25/45/85)
 
-  Copyright (C) 2001, 2014 Marc Schoolderman
+  Example program
+
+  Copyright (C) 2014 Marc Schoolderman
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
@@ -34,8 +36,14 @@ startup:
     sleep
     .endif
 
-    la Y, mkey
-    loadram Y, _mkey, KEY_SIZE/8
+    init_data
+    .if TAB_key
+    la Y, mkey+KEY_SIZE/8		; mkey is a symbol in SRAM
+    .else
+    la Y, twofish_roundkeys+MASTERKEY_OFS
+    loadram Y, mkey, KEY_SIZE/8		; mkey is a symbolin program memory
+    .endif
+
     la X, twofish_roundkeys
     .if STATE < 2
     sleep
@@ -45,14 +53,8 @@ startup:
     sleep
     .endif
 
-    .if !TAB_key
-    la X, twofish_roundkeys+KEY_SIZE/16
-    loadram X, _mkey, KEY_SIZE/8
-    .endif
-
-    la Z, 4
-    clr r0
-    setmem Z, 16, r0, r20
+    la Z, 4				; set r4 .. r19 (plaintext) to zero
+    setmem Z, 16, Z_H, r20
 
     .if STATE < 4
     sleep
@@ -62,14 +64,19 @@ startup:
     sleep
     .size startup, .-startup
 
-_mkey:
-.if KEY_SIZE > 128
-.byte 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef
-.byte 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10
-.byte 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77
-.byte 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff
-.else
-.space 16
+.if TAB_key
+.data
 .endif
 
-.comm mkey, KEY_SIZE/8, 32
+mkey:
+.if KEY_SIZE > 128
+    .byte 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef
+    .byte 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10
+    .byte 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77
+    .byte 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff
+.else
+    .space 16
+.endif
+
+.comm twofish_roundkeys, SCHEDULE_SIZE
+

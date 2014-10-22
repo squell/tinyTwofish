@@ -1,7 +1,7 @@
 /*
   tinyTwofish implementation for tinyAVR (ATtiny25/45/85)
 
-  Copyright (C) 2001, 2014 Marc Schoolderman
+  Copyright (C) 2014 Marc Schoolderman
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
@@ -651,6 +651,9 @@ loop:
 twofish_enc:
 
     ; pre-whitening
+.if STATIC
+    la Y, twofish_roundkeys
+.endif
 
 .if TAB_key
     .if INLINE_whiten
@@ -820,7 +823,5 @@ FISH_SIZE = .-FISH_START
 .comm twofish_sbox, 1024, 256
 .endif
 .if STATIC
-.comm twofish_roundkeys, SCHEDULE_SIZE
-.else
 .comm twofish_roundkeys, SCHEDULE_SIZE
 .endif

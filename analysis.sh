@@ -1,6 +1,7 @@
 #! /bin/bash
 
-OPTS="INLINE_round_g UNROLL_round_h UNROLL_round_g UNROLL_keypair UNROLL_enc UNROLL_swap TAB_key TAB_sbox TAB_q SRAM_q UNROLL_whiten INLINE_whiten"
+#OPTS="INLINE_round_g UNROLL_round_h UNROLL_round_g UNROLL_keypair UNROLL_enc UNROLL_swap TAB_key TAB_sbox TAB_q SRAM_q UNROLL_whiten INLINE_whiten"
+OPTS="INLINE_round_g" # UNROLL_round_h UNROLL_round_g UNROLL_keypair UNROLL_enc UNROLL_swap TAB_key TAB_sbox TAB_q SRAM_q UNROLL_whiten INLINE_whiten"
 
 MCU=atmega644
 AS="avr-as -o2fish_avr.o -mmcu=$MCU 2> /dev/null"
@@ -27,9 +28,10 @@ test_script() {
 	    sp=\`echo "\$output4" | cut -f2 -d=\`
 	    sp=\$((4096+255-sp))
 	    size=\`avr-nm --size-sort --radix=d /tmp/2fish_avr.o | cut -d' ' -f1,3\`
+	    atot=\`echo "\$tot" | awk '{acc+=$1}END{print acc}'\`
 	    tot=\`avr-size --common /tmp/2fish_avr.o | tail -n1 | cut -f1,3\`
 	    bss=\`echo "\$tot" | cut -f2\`
-	    echo SIZE: \$tot '\t' SRAM: \$((bss+sp)) '\t' INIT: \$((clocks0)) '\t' KS: \$((clocks2-clocks1)) '\t' EB: \$((clocks4-clocks3)) KE: \$((clocks2+clocks4-clocks1-clocks3)) '\t' '\t' SP: \$sp '\t' \#: \$size '\t' KEY_SIZE=$1 $(for flag in $OPTS; do echo -n " $flag=\$$flag"; done) '\t' \$size
+	    echo SIZE: \$rtot '\t' ASIZE: \$tot '\t' SRAM: \$((bss+sp)) '\t' INIT: \$((clocks0)) '\t' KS: \$((clocks2-clocks1)) '\t' EB: \$((clocks4-clocks3)) KE: \$((clocks2+clocks4-clocks1-clocks3)) '\t' '\t' SP: \$sp '\t' \#: \$size '\t' KEY_SIZE=$1 $(for flag in $OPTS; do echo -n " $flag=\$$flag"; done) '\t' \$size
 	else
 	    echo 1>&2 not run
 	fi

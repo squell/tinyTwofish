@@ -1,7 +1,9 @@
 /*
   tinyTwofish implementation for tinyAVR (ATtiny25/45/85)
 
-  Copyright (C) 2001, 2014 Marc Schoolderman
+  KAT tests
+
+  Copyright (C) 2014 Marc Schoolderman
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
