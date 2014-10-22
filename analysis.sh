@@ -26,8 +26,8 @@ test_script() {
 	    clocks4=\`echo "\$output4" | cut -f1 -d:\`
 	    sp=\`echo "\$output4" | cut -f2 -d=\`
 	    sp=\$((4096+255-sp))
-	    size=\`avr-nm --size-sort --radix=d /tmp/2fish_avr.o | cut -d' ' -f1,3\`
-	    rtot=\`echo "\$size" | awk '{acc+=\$1}END{print acc}'\`
+	    size=\`avr-nm --size-sort --radix=d /tmp/2fish_avr.o\`
+	    rtot=\`echo "\$size" | awk '\$2~/^[tT]\$/{acc+=\$1}END{print acc}'\`
 	    tot=\`avr-size --common /tmp/2fish_avr.o | tail -n1 | cut -f1,3\`
 	    bss=\`echo "\$tot" | cut -f2\`
 	    echo SIZE: \$rtot '\t' ASIZE: \$tot '\t' SRAM: \$((bss+sp)) '\t' INIT: \$((clocks0)) '\t' KS: \$((clocks2-clocks1)) '\t' EB: \$((clocks4-clocks3)) KE: \$((clocks2+clocks4-clocks1-clocks3)) '\t' '\t' SP: \$sp '\t' \#: \$size '\t' KEY_SIZE=$1 $(for flag in $OPTS; do echo -n " $flag=\$$flag"; done) '\t' \$size
