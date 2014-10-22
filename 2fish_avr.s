@@ -822,6 +822,4 @@ FISH_SIZE = .-FISH_START
 .if TAB_sbox
 .comm twofish_sbox, 1024, 256
 .endif
-.if STATIC
 .comm twofish_roundkeys, SCHEDULE_SIZE
-.endif
