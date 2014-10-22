@@ -54,7 +54,8 @@ startup:
     .endif
 
     la Z, 4				; set r4 .. r19 (plaintext) to zero
-    setmem Z, 16, Z_H, r20
+    clr r0
+    setmem Z, 16, r0, r20
 
     .if STATE < 4
     sleep
