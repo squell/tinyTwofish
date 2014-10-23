@@ -750,6 +750,8 @@ twofish_init:
     init_q
     ret
     .size twofish_init, .-twofish_init
+.elseif SRAM_q
+    .error "Incompatible/meaningless: SRAM_q=1 but TAB_q=0."
 .else
 twofish_init = empty_function
     .size twofish_init, 0
