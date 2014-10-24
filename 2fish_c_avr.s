@@ -1,7 +1,7 @@
 /*
   tinyTwofish implementation for tinyAVR (ATtiny25/45/85)
 
-  KAT tests
+  Wrapper for the (gcc) C api -- handles initialization
 
   Copyright (C) 2014 Marc Schoolderman
 
@@ -26,47 +26,48 @@
 .include "2fish_avr.cfg"
 .include "avrmacros.s"
 
-.global kat
-
-.section .bss
-katkey:  .space KEY_SIZE/8
-katdata: .space 16
-schedule:.space SCHEDULE_SIZE
+.if !STATIC
+.error "Must set STATIC=1 in 2fish_avr.cfg to link with C programs."
+.endif
 
 .section .text
 
-    rcall twofish_init
-kat:
-    clr r20                           ; setup
-    la Y, katdata
-    setmem Y, 16, r20, r21
-    la Y, katkey
-    setmem Y, KEY_SIZE/8, r20, r21
+.global twofish_call_saver, twofish_enc_trampoline, twofish_keysize_trampoline
 
-1:  push r20
-    la X, schedule
-    .if TAB_key
-    la Y, katkey+KEY_SIZE/8
-    .else
-    la Y, schedule+KEY_SIZE/16
-    loadram Y, katkey, KEY_SIZE/8, ld
-    .endif
-    rcall twofish_key                    ; produce twofish_roundkeys
+.equ twofish_keysize_trampoline, KEY_SIZE
 
-    copy katkey, katkey+16, KEY_SIZE/8-16; update the masterkey
-    copy katdata, katkey, 16
+;? Z -> actual procedure to call
+twofish_call_saver:
+    .irp reg, 2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,28,29
+    push r\reg
+    .endr
+    movw Y_L, X_L
+    icall
+    .irp reg, 29,28,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2
+    pop r\reg
+    .endr
+    clr r1
+    ret
 
-    la X, 4                              ; encrypt
-    loadram X, katdata, 16, ld
-    la Y, schedule
+;! copy the argument (in X) to r4..r19, then copy back
+twofish_enc_trampoline:
+    push X_L
+    push X_H
+    .irp i, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+    ld 4+\i, X+
+    .endr
+
     rcall twofish_enc
 
-    la X, katdata                       ; save result and loop
-    loadram X, 4, 16, ld
-    pop r20
-    inc r20
-    cpi r20, 49
-    brlo 1b
+    pop X_H
+    pop X_L
+    .irp i, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+    st X+, 4+\i
+    .endr
+    ret
 
-    cli
-    sleep
+.if TAB_q && SRAM_q
+.section .init8
+    rcall twofish_init
+.endif
+

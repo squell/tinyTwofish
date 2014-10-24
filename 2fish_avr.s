@@ -159,7 +159,14 @@ i=0
     load d+i, Z, SRAM_q
     .else
     ldi Z_H, hi8(qperm)
+	.if !SRAM_q              ; re-use SRAM_q to avoid introducing another flag
     qbox_m %d+i, %select+2, %select+1
+	.else
+    push select
+    shared qbox_m, %select, %select+2, %select+1
+    mov d+i, select
+    pop select
+	.endif
     .endif
     i=i+1
 .endr
@@ -303,10 +310,15 @@ start:
 
 /* uses r0..r3 as working area */
 .macro round_g out, src, step=<4+0>
+;.print "round_g out, src, step"
 #? Y -> key material
 local i, loop
 .if UNROLL_round_g
+    .if (!INLINE_round_g) && (TAB_sbox == 2) && (!UNROLL_keypair)
+    shared round_h, 0, %src, %step, %out
+    .else
     round_h 0, src, step, out
+    .endif
     ldi r30, MDS_POLY>>1
     mds_columni out, r0, r30, <0x01,0x5B,0xEF,0xEF>, mov
     mds_columni out, r1, r30, <0xEF,0xEF,0x5B,0x01>
@@ -314,7 +326,11 @@ local i, loop
     mds_columni out, r3, r30, <0x5B,0x01,0xEF,0x5B>
 .else
     round_g_init 1
+    .if (!INLINE_round_g) && (TAB_sbox == 2) && (!UNROLL_keypair)
+    shared round_h, 0, %src, %step, %out
+    .else
     round_h 0, src, step, out
+    .endif
 
     push Y_L ;( we are out of registers.
     ; an encoding of the MDS matrix
@@ -357,7 +373,7 @@ loop:
 ;.print "keypair kreg, num, pos"
 #? Y -> key material
 local i, loop, exit, tmp            
-.if (UNROLL_keypair || TAB_sbox) && !INLINE_round_g
+.if UNROLL_keypair && !INLINE_round_g
 .warning "Ignoring INLINE_round_g=0 in .macro keypair."
 .endif
 .if UNROLL_keypair
@@ -375,8 +391,13 @@ loop:
     movq kreg, kreg+4                 ; no-op on the first pass
     quad mov tmp, num  
     inc num
-    .if INLINE_round_g || TAB_sbox
-    round_g kreg+4, tmp, <8+pos>
+    .if INLINE_round_g
+    round_g kreg+4, %tmp, <8+pos>
+    adiw Y_L, 4
+    .elseif TAB_sbox
+    ldi kreg+4, 4
+    adiw Y_L, KEY_SIZE/16
+    round_g %kreg+4, %tmp, %kreg+4
     adiw Y_L, 4
     .else
     ldi kreg+4, 4       
@@ -441,11 +462,18 @@ twofish_key:
     dec r20
     brne 1b
 
+.if STATIC && !TAB_key
+1:  ld r0, Y+               ; copy the key ourselves
+    st r0, X+
+    cpi X_L, lo8(twofish_roundkeys+SCHEDULE_SIZE)
+    brne 1b
+.endif
+
 .if TAB_key
     movw r14, X_L           ; save this position to return it to the caller as Y
     ldi r16, 40
     clr r12                 ; round number
-    .if INLINE_round_g
+    .if INLINE_round_g || TAB_sbox
     mov r13, r16
     round_g_init
 1:  keypair 16, r12         
@@ -473,19 +501,25 @@ twofish_key:
 
 .if TAB_sbox   		    ; precompute the sboxes.
     la X, twofish_sbox
-    clr r20
+    clr r16
     .if !UNROLL_round_g || !INLINE_round_g
     round_g_init 1
     .endif
-1:  quad mov 0, r20
-    round_h 0, 0, <4+0>, 16
+    .if INLINE_round_g || UNROLL_keypair
+1:  quad mov 0, r16
+    round_h 0, 0, <4+0>, 20
+    .else
+    clr r20
+1:  quad mov 4, r16
+    shared round_h, 0, 4, 20, 20
+    .endif
     .irp i, 0,1,2           ; distribute the result over the sboxes
     st X, i
     inc X_H
     .endr
     st X+, r3
     subi X_H, 3
-    inc r20
+    inc r16
     br ne 1b
     TAB_sbox=1
 .endif
