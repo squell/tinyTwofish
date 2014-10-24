@@ -462,6 +462,13 @@ twofish_key:
     dec r20
     brne 1b
 
+.if STATIC && !TAB_key
+1:  ld r0, Y+               ; copy the key ourselves
+    st r0, X+
+    cpi X_L, lo8(twofish_roundkeys+SCHEDULE_SIZE)
+    brne 1b
+.endif
+
 .if TAB_key
     movw r14, X_L           ; save this position to return it to the caller as Y
     ldi r16, 40
