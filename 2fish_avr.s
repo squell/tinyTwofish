@@ -464,7 +464,7 @@ twofish_key:
 
 .if STATIC && !TAB_key
 1:  ld r0, Y+               ; copy the key ourselves
-    st r0, X+
+    st X+, r0
     cpi X_L, lo8(twofish_roundkeys+SCHEDULE_SIZE)
     brne 1b
 .endif
