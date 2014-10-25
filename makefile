@@ -1,4 +1,4 @@
-CHIP ?= attiny45
+CHIP ?= attiny85
 
 SIMAVR_ROOT = /tmp/avr
 SIMAVR_INCLUDE = ${SIMAVR_ROOT}/include/simavr
@@ -36,7 +36,7 @@ kat_test.o: kat_test.s 2fish_avr.cfg
 	avr-gcc ${CFLAGS} -mmcu=${CHIP} -c -o $@ $<
 
 driver: driver.c
-	c99 ${CFLAGS} $< -I ${SIMAVR_INCLUDE} -L ${SIMAVR_LIB} -lsimavr -lelf -o $@
+	c99 ${CFLAGS} $< -DMCU=${CHIP} -I ${SIMAVR_INCLUDE} -L ${SIMAVR_LIB} -lsimavr -lelf -o $@
 
 test: driver
 	./selftest.sh 2>&1 | sed /failed/q1
