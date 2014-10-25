@@ -9,7 +9,7 @@ CFLAGS = -O3
 default: driver tinyrom
 
 clean: 
-	rm -f *.o tinyrom megarom tinykat megakat
+	rm -f *.o tinyrom megarom tinykat megakat ckat
 
 tinyrom: example.o 2fish_avr.o
 	avr-ld example.o 2fish_avr.o -o $@
