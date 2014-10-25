@@ -52,7 +52,7 @@ int main(void)
 */
 
 /* not a compile-time constant, but better than nothing */
-#define twofish_keysize (2*(unsigned int)twofish_keysize_trampoline)
+#define twofish_keysize ((unsigned int)twofish_keysize_trampoline)
 
 /* work arounds are necessary to tell avr-gcc that inputs are clobbered as well */
 #define twofish_setkey(master_key) { \
