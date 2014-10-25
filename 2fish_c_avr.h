@@ -27,9 +27,9 @@ Link with 2fish_avr.o and 2fish_c_avr.o
 This file defines three macro's, which you can use as-if
 
 const unsigned int twofish_keysize;   
-    A constant telling you what key-size tinyTwofish was assembled with
+    A constant telling you what key-size (in bytes) tinyTwofish was assembled with
 
-twofish_setkey(const unsigned char master_key[twofish_keysize/8]);
+twofish_setkey(const unsigned char master_key[twofish_keysize]);
     Sets the Twofish key to `master_key'.
 
 twofish_encrypt(unsigned char data[16]);
@@ -39,7 +39,7 @@ EXAMPLE:
 
 #include "2fish_c_avr.h"
 
-char mkey[16];
+char mkey[32];
 
 int main(void)
 {
@@ -57,7 +57,7 @@ int main(void)
 /* work arounds are necessary to tell avr-gcc that inputs are clobbered as well */
 #define twofish_setkey(master_key) { \
     register void *clobber; \
-    asm volatile("rcall twofish_call_saver" : "=x"(clobber), "=z"(clobber) : "z"(twofish_key), "x"(&master_key[sizeof master_key]) \
+    asm volatile("rcall twofish_call_saver" : "=x"(clobber), "=z"(clobber) : "z"(twofish_key), "x"(&master_key[twofish_keysize]) \
         : "r0", "r18", "r19", "r20", "r21", "r22", "r23", "r24", "r25"); \
     }
 
