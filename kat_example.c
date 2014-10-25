@@ -4,6 +4,8 @@
 
  Puts an AVR to sleep if succesful; endless loop if unsuccesful.
 
+ Note: the KAT answers take up 2352 bytes; for the default Twofish-settings, at least an ATtiny85 is required.
+
  copyright (c) 2014 marc schoolderman
 
  permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is
@@ -14,11 +16,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <avr/pgmspace.h>
 #include "2fish_c_avr.h"
 
 /* The CT=... lines from KAT.txt */
 
-unsigned char KAT_answers[3][49][16] = {
+const unsigned char KAT_answers[3][49][16] PROGMEM = {
     0x9F,0x58,0x9F,0x5C,0xF6,0x12,0x2C,0x32,0xB6,0xBF,0xEC,0x2F,0x2A,0xE8,0xC3,0x5A,
     0xD4,0x91,0xDB,0x16,0xE7,0xB1,0xC3,0x9E,0x86,0xCB,0x08,0x6B,0x78,0x9F,0x54,0x19,
     0x01,0x9F,0x98,0x09,0xDE,0x17,0x11,0x85,0x8F,0xAA,0xC3,0xA3,0xBA,0x20,0xFB,0xC3,
@@ -182,7 +185,7 @@ int main(void)
 	memcpy(buf[i%2],    buf[(i+1)%2], 16);
 
 	twofish_encrypt(buf[i%2]);
-	if(memcmp(buf[i%2], KAT_answers[twofish_keysize/8-2][i-1], 16) != 0)
+	if(memcmp_P(buf[i%2], KAT_answers[twofish_keysize/8-2][i-1], 16) != 0)
 	    abort();
     }
     asm("cli");
