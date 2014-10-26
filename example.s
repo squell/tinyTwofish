@@ -37,7 +37,7 @@ startup:
     la Y, mkey+KEY_SIZE/8		; mkey is a symbol in SRAM
     .else
     la Y, twofish_roundkeys+MASTERKEY_OFS
-    loadram Y, mkey, KEY_SIZE/8		; mkey is a symbolin program memory
+    loadram Y, mkey, KEY_SIZE/8		; mkey is a symbol in program memory
     .endif
 
     la X, twofish_roundkeys
