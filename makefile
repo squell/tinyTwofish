@@ -6,7 +6,7 @@ SIMAVR_LIB = ${SIMAVR_ROOT}/lib
 
 CFLAGS = -O3
 
-default: driver tinyrom
+default: tinyrom
 
 clean: 
 	rm -f *.o tinyrom megarom tinykat megakat ckat
