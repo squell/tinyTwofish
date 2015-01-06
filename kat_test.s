@@ -70,3 +70,7 @@ kat:
 
     cli
     sleep
+
+; suppress double allocation of roundkeys by 2fish_avr.s if STATIC=1
+.global twofish_roundkeys
+twofish_roundkeys = schedule

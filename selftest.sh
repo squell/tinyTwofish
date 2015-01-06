@@ -1,6 +1,6 @@
-OPTS="INLINE_round_g UNROLL_round_h UNROLL_round_g UNROLL_keypair UNROLL_enc UNROLL_swap TAB_key TAB_sbox TAB_q SRAM_q UNROLL_whiten INLINE_whiten"
+OPTS="INLINE_round_g UNROLL_round_h UNROLL_round_g UNROLL_keypair UNROLL_enc UNROLL_swap TAB_key TAB_sbox TAB_q SRAM_q UNROLL_whiten INLINE_whiten STATIC"
 
-MCU=atmega644
+MCU=atmega328
 AS="avr-as -o2fish_avr.o -mmcu=$MCU 2> /dev/null"
 ROM=megakat
 

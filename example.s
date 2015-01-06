@@ -67,4 +67,4 @@ mkey:
     .space 16
 .endif
 
-.comm twofish_roundkeys, SCHEDULE_SIZE
+.comm twofish_roundkeys, SCHEDULE_SIZE, 1
