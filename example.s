@@ -32,8 +32,8 @@
 startup:
     rcall twofish_init			; initialize static tables, if any
 
-    init_data
     .if TAB_key
+    init_data
     la Y, mkey+KEY_SIZE/8		; mkey is a symbol in SRAM
     .else
     la Y, twofish_roundkeys+MASTERKEY_OFS
@@ -68,4 +68,3 @@ mkey:
 .endif
 
 .comm twofish_roundkeys, SCHEDULE_SIZE
-

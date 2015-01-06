@@ -264,15 +264,15 @@ I&op&_&a&_&b&_&c&_&d&:
 
 /* for initializing the sram data segment from flash; if any */
 .macro init_data location=.data
-.if __data_load_start != __data_load_end
     la Z, __data_load_start
     la Y, location
     1: 
     lpm X_L, Z+
     st Y+, X_L
     cpi Z_L, lo8(__data_load_end)
-    brne 1b
-.endif
+    brlo 1b
+    cpi Z_H, hi8(__data_load_end)
+    brlo 1b
 .endm
 
 .macro dump load org
