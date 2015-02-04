@@ -51,11 +51,17 @@ void dump_avr2(void)
     }
 }
 
+#define foo(s) #s
+#define str(s) foo(s)
+#ifndef MCU
+#define MCU attiny45
+#endif
+
 int main(int argc, char *argv[])
 {
 	elf_firmware_t f;
 	const char * fname = argv[1]?argv[1]:"firmware.axf";
-	const char * mcu   = argv[1]&&argv[2]?argv[2]:"attiny45";
+	const char * mcu   = argv[1]&&argv[2]?argv[2]:str(MCU);
 	int debug = argc > 3;
 
 	printf("Firmware pathname is %s\n", fname);
@@ -84,8 +90,6 @@ int main(int argc, char *argv[])
 	dump_avr();
 	while ((state != cpu_Done) && (state != cpu_Crashed)) {
 		state = avr_run(avr);
-		if(state == cpu_Running || state == cpu_Step)
-		    dump_avr();
 	}
 	dump_avr2();
 }

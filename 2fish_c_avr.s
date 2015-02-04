@@ -34,7 +34,7 @@
 
 .global twofish_call_saver, twofish_enc_trampoline, twofish_keysize_trampoline
 
-.equ twofish_keysize_trampoline, KEY_SIZE
+.equ twofish_keysize_trampoline, 2*KEY_SIZE/8
 
 ;? Z -> actual procedure to call
 twofish_call_saver:

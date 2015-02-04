@@ -14,6 +14,8 @@
 ;	Test/demo program
 ; kat_test.s
 ; 	Known Answer Tests in AVR assembly
+; kat_example.c 
+;	Example/Known Answer Tests in C
 ; driver.c
 ;	Simple AVR emulator using simavr
 ;
