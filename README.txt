@@ -20,7 +20,7 @@
 ;	Simple AVR emulator using simavr
 ;
 ; -------------------------------------------------------
-; Overview of most interesting implementations
+; Overview of most interesting implementations; KEY_SIZE=128
 ; Column information:
 ;
 ; SIZE	Actual footprint of code + tables (excl. alignment)
@@ -79,4 +79,10 @@ SIZE: 1784	ASIZE: 1792	SRAM: 1708	E: 3573 KE: 31619	; INLINE_round_g=1 UNROLL_ro
 ; UNROLL_keypair = UNROLL_enc = 0
 ; 	These control 'outer loops' which do not need to be unrolled.
 ; INLINE_round_g = UNROLL_round_h
-
+;
+; Increasing KEY_SIZE to 192 or 256 will increase SRAM size with 8/16
+; bytes if TAB_key=0; as well as increase ROM footprint.
+;
+; Range of supported MCU's:
+; - tinyTwofish can run on ATtiny13 with KEY_SIZE=128 and KEY_SIZE=192
+; - ATmega32 and better (e.g. Arduino) can handle any configuration

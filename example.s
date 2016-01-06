@@ -36,8 +36,8 @@ startup:
     sleep
     .endif
 
-    init_data
     .if TAB_key
+    init_data
     la Y, mkey+KEY_SIZE/8		; mkey is a symbol in SRAM
     .else
     la Y, twofish_roundkeys+MASTERKEY_OFS
@@ -79,5 +79,4 @@ mkey:
     .space 16
 .endif
 
-.comm twofish_roundkeys, SCHEDULE_SIZE
-
+.comm twofish_roundkeys, SCHEDULE_SIZE, 1

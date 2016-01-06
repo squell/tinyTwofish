@@ -765,7 +765,6 @@ empty_function:
 ; this is useful if we want the qtable to reside in sram and keep codesize down
 ; and of course, to test the code
 .macro init_q
-    .comm qbox, 512, 512
     ldi Z_H, hi8(qperm)
     ldi r17, lo8(qperm)
     ldi Y_H, hi8(qbox)
@@ -853,9 +852,19 @@ FISH_DATASIZE = .-FISH_DATASTART
 
 FISH_SIZE = .-FISH_START
 
-.if TAB_sbox
-.comm twofish_sbox, 1024, 256
+.section .noinit, "", @nobits
+
+.if TAB_q && SRAM_q
+.p2align 9
+qbox: .space 512
 .endif
+
+.if TAB_sbox
+.p2align 8
+.global twofish_sbox
+twofish_sbox: .space 1024
+.endif
+
 .if STATIC
-.comm twofish_roundkeys, SCHEDULE_SIZE
+.comm twofish_roundkeys, SCHEDULE_SIZE, 1
 .endif
