@@ -1,6 +1,6 @@
 CHIP ?= attiny85
 
-SIMAVR_ROOT = /tmp/avr
+SIMAVR_ROOT = /usr
 SIMAVR_INCLUDE = ${SIMAVR_ROOT}/include/simavr
 SIMAVR_LIB = ${SIMAVR_ROOT}/lib
 
