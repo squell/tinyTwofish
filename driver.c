@@ -25,6 +25,7 @@
 #include <pthread.h>
 
 #include "sim_avr.h"
+#include "sim_core.h"
 #include "avr_twi.h"
 #include "sim_elf.h"
 #include "sim_gdb.h"
@@ -35,12 +36,24 @@ avr_vcd_t vcd_file;
 
 void dump_avr(void) 
 {
-    printf("%10lld: ", avr->cycle);
-    for(int j=0; j < 1; j++) {
-	for(int i=0; i < 32; i++)
-	    printf("%02x ", avr->data[i+j*32]);
-	printf("SP=%04x\n", avr->data[0x5E]*256 + avr->data[0x5D]);
-    }
+	int dst;
+	READ_SREG_INTO(avr, dst);
+	printf("%10llu: ", (unsigned long long int)avr->cycle);
+	for(int j=0; j < 1; j++) {
+		for(int i=0; i < 32; i++)
+			printf("%02x ", avr->data[i+j*32]);
+		printf("SP=%04x, SREG=%02x, PC=%04lx [%04x]\n", avr->data[0x5E]*256+avr->data[0x5D], dst, (unsigned long)avr->pc/2, avr->flash[avr->pc]+avr->flash[avr->pc+1]*256);
+	}
+}
+
+void putty(struct avr_t *avr, avr_io_addr_t addr, uint8_t v, void* param)
+{
+	if(v==4) {
+		dump_avr();
+		exit(0);
+	}
+	putchar(v);
+	fflush(stdout);
 }
 
 #define foo(s) #s
@@ -78,11 +91,14 @@ int main(int argc, char *argv[])
 
 	printf( "\nDemo launching:\n");
 
+	avr_register_io_write(avr,0xC6,putty,0);
+
 	int state = cpu_Running;
-	dump_avr();
 	while ((state != cpu_Done) && (state != cpu_Crashed)) {
+#ifndef FAST
+		dump_avr();
+#endif
 		state = avr_run(avr);
-		if(state == cpu_Running || state == cpu_Step)
-		    dump_avr();
 	}
+	dump_avr();
 }

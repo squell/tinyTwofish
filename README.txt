@@ -23,6 +23,8 @@
 ;
 ; portable/2fishy.*, portable/2fishy_test.c
 ; 	Portable reference implementation (used during development)
+; portable/2fish_x86_64.s
+;	x86-64 implementation (used during development)
 ; portable/KAT.txt
 ;	Known-Answer-Tests from the original paper
 ;
