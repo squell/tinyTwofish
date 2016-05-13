@@ -857,12 +857,14 @@ FISH_SIZE = .-FISH_START
 .if TAB_q && SRAM_q
 .p2align 9
 qbox: .space 512
+    .size qbox, 512
 .endif
 
 .if TAB_sbox
 .p2align 8
 .global twofish_sbox
 twofish_sbox: .space 1024
+    .size twofish_sbox, 1024
 .endif
 
 ;.if STATIC
