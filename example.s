@@ -32,7 +32,7 @@
 startup:
     cli
     rcall twofish_init
-    .if STATE < 1 
+    .if STATE < 1
     sleep
     .endif
 

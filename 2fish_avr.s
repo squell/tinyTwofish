@@ -865,6 +865,6 @@ qbox: .space 512
 twofish_sbox: .space 1024
 .endif
 
-.if STATIC
+;.if STATIC
 .comm twofish_roundkeys, SCHEDULE_SIZE, 1
-.endif
+;.endif

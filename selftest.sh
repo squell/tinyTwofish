@@ -1,13 +1,11 @@
-OPTS="INLINE_round_g UNROLL_round_h UNROLL_round_g UNROLL_keypair UNROLL_enc UNROLL_swap TAB_key TAB_sbox TAB_q SRAM_q UNROLL_whiten INLINE_whiten"
+OPTS="INLINE_round_g UNROLL_round_h UNROLL_round_g UNROLL_keypair UNROLL_enc UNROLL_swap TAB_key TAB_sbox TAB_q SRAM_q UNROLL_whiten INLINE_whiten STATIC"
 
-MCU=${2:-atmega644}
-ROM=${1:-megakat}
-
-TMP=/tmp/tinyTwofish-KAT
-mkdir -p "$TMP"
+MCU=atmega328
+AS="avr-as -o2fish_avr.o -mmcu=$MCU 2> /dev/null"
+ROM=megakat
 
 test_script() {
-    cp makefile *.s *_*.[ch] "$TMP"
+    cp makefile *.s /tmp
     echo "echo 1>&2 {KEY_SIZE=$1}"
     for flag in $OPTS; do
 	echo "for $flag in 0 1; do echo 1>&2 {$flag=\$$flag}"
@@ -16,11 +14,11 @@ test_script() {
     for flag in $OPTS; do
 	echo -n "s/^$flag[[:space:]]*=.*/$flag=\$$flag/;"
     done
-    echo "s/^KEY_SIZE[[:space:]]*=.*/KEY_SIZE=$1/\" 2fish_avr.cfg > "$TMP"/2fish_avr.cfg"
+    echo "s/^KEY_SIZE[[:space:]]*=.*/KEY_SIZE=$1/\" 2fish_avr.cfg > /tmp/2fish_avr.cfg"
     cat <<script
-	if make -B -s . -C "$TMP" $ROM CHIP="$MCU"
+	if make -B -s . -C /tmp $ROM
 	then
-	    ./driver "$TMP"/$ROM $MCU | tail -n1 | grep "$2" 1> /dev/null || echo failed: KEY_SIZE=$1 $(for flag in $OPTS; do echo -n " $flag=\$$flag"; done)
+	    ./driver /tmp/$ROM $MCU | tail -n1 | grep "$2" 1> /dev/null || echo failed: KEY_SIZE=$1 $(for flag in $OPTS; do echo -n " $flag=\$$flag"; done)
 	else
 	    echo 1>&2 not run
 	fi

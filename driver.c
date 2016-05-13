@@ -87,9 +87,9 @@ int main(int argc, char *argv[])
 	printf( "\nDemo launching:\n");
 
 	int state = cpu_Running;
-	dump_avr();
 	while ((state != cpu_Done) && (state != cpu_Crashed)) {
 		state = avr_run(avr);
+		dump_avr();
 	}
 	dump_avr2();
 }
