@@ -1,11 +1,11 @@
-
-
-# 2 4 5 7 9 11 13 15
+# filter configurations which are utterly useless 
+# (i.e.: objectively betters ones exist)
 
 {
     for(i=1;  i<=N; i++) {
-	if($2 >= a[i] && $4 >= b[i] && $5 >= c[i] && $7 >= d[i] && $13 >= g[i] && $15 >= h[i]) {
-	    print "useless:", n[i], ">" $0
+	#if($2 >= a[i] && $4 >= b[i] && ($6+7) >= c[i] && $14 >= d[i] && $12 >= e[i] && $18 <= k[i]) {
+	if($2 >= a[i] && ($6+7) >= c[i] && $14 >= d[i] && $12 >= e[i] && $18 <= k[i]) {
+	    #print "useless:", n[i], ">" $0
 	    next
 	}
     }
@@ -13,9 +13,9 @@
     n[N] = NR
     a[N] = $2
     b[N] = $4
-    c[N] = $5
-    d[N] = $7
-    g[N] = $13
-    h[N] = $15
-    print $0
+    c[N] = $6
+    d[N] = $14
+    e[N] = $12
+    k[N] = $18
+    print
 }

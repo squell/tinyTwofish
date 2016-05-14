@@ -28,9 +28,9 @@ test_script() {
 	    sp=\$((4096+255-sp))
 	    size=\`avr-nm --size-sort --radix=d /tmp/2fish_avr.o\`
 	    rtot=\`echo "\$size" | awk '\$2~/^[tT]\$/{acc+=\$1}END{print acc}'\`
-	    tot=\`avr-size --radix=10 --common /tmp/2fish_avr.o | tail -n1 | cut -f1,3\`
-	    bss=\`echo "\$tot" | cut -f2\`
-	    echo SIZE: \$rtot '\t' ASIZE: \$tot '\t' SRAM: \$((bss+sp)) '\t' INIT: \$((clocks0)) '\t' KS: \$((clocks2-clocks1)) '\t' EB: \$((clocks4-clocks3)) KE: \$((clocks2+clocks4-clocks1-clocks3)) '\t' '\t' SP: \$sp '\t' \#: \$size '\t' KEY_SIZE=$1 $(for flag in $OPTS; do echo -n " $flag=\$$flag"; done)
+	    dtot=\`echo "\$size" | awk '\$2~/^[dDcCbB]\$/{acc+=\$1}END{print acc}'\`
+	    text=\`avr-size --radix=10 /tmp/2fish_avr.o | cut -f1 | tail -n1\`
+	    echo SIZE: \$rtot '\t' ASIZE: \$text '\t' SRAM: \$((dtot+sp)) '\t' INIT: \$((clocks0)) '\t' KS: \$((clocks2-clocks1)) '\t' EB: \$((clocks4-clocks3)) KE: \$((clocks2+clocks4-clocks1-clocks3)) '\t' SP: \$sp '\t' \# KEY_SIZE=$1 $(for flag in $OPTS; do echo -n " $flag=\$$flag"; done)
 	else
 	    echo 1>&2 not run
 	fi
