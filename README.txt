@@ -37,6 +37,9 @@
 ; SRAM	Total amount of SRAM needed (.bss and stack)
 ; E	Cycles needed to encrypt one block
 ; KE	Cycles needed to keyschedule & encrypt one block
+;
+; For a giving keysize, tinyTwofish runs in constant time; the timings
+; listed are indepedent of the encryption key or the plaintext.
 
 ; Implementations not pre-computing the key-dependent s-box:
 ; Per SRAM size:
@@ -70,9 +73,12 @@ SIZE: 1930	ASIZE: 1984	SRAM: 684	E: 5173 KE: 11457	; INLINE_round_g=1 UNROLL_rou
 ;
 ; NOTE:
 ; - The 'smallest possible implementations' in this category perform worse but have larger Flash/SRAM footprints than some S-Box-less configurations
-; - These implementations offer a SRAM vs. space/key setup time trade-off
+; - These implementations offer a SRAM vs. space/key setup time trade-off (TAB_q=0/1)
 
 SIZE: 948	ASIZE: 960	SRAM: 1199	E: 4537 KE: 288237	; INLINE_round_g=0 UNROLL_round_h=0 UNROLL_round_g=1 UNROLL_keypair=0 UNROLL_enc=0 UNROLL_swap=1 TAB_key=1 TAB_sbox=1 TAB_q=0 SRAM_q=1 UNROLL_whiten=1 INLINE_whiten=0
+SIZE: 1116	ASIZE: 1152	SRAM: 1198	E: 3801	KE: 285011	; INLINE_round_g=1 UNROLL_round_h=0 UNROLL_round_g=1 UNROLL_keypair=0 UNROLL_enc=0 UNROLL_swap=1 TAB_key=1 TAB_sbox=1 TAB_q=0 SRAM_q=1 UNROLL_whiten=1 INLINE_whiten=0
+SIZE: 1554	ASIZE: 1600	SRAM: 1197	E: 3573	KE: 284783	; INLINE_round_g=1 UNROLL_round_h=0 UNROLL_round_g=1 UNROLL_keypair=0 UNROLL_enc=1 UNROLL_swap=1 TAB_key=1 TAB_sbox=1 TAB_q=0 SRAM_q=1 UNROLL_whiten=1 INLINE_whiten=1
+
 SIZE: 1318	ASIZE: 1536	SRAM: 1198	E: 4537 KE: 50253	; INLINE_round_g=0 UNROLL_round_h=0 UNROLL_round_g=1 UNROLL_keypair=0 UNROLL_enc=0 UNROLL_swap=1 TAB_key=1 TAB_sbox=1 TAB_q=1 SRAM_q=0 UNROLL_whiten=1 INLINE_whiten=0
 SIZE: 1514	ASIZE: 1536	SRAM: 1198	E: 3801 KE: 35779	; INLINE_round_g=1 UNROLL_round_h=1 UNROLL_round_g=1 UNROLL_keypair=0 UNROLL_enc=0 UNROLL_swap=1 TAB_key=1 TAB_sbox=1 TAB_q=1 SRAM_q=0 UNROLL_whiten=1 INLINE_whiten=0
 SIZE: 2158	ASIZE: 2560	SRAM: 1196	E: 3573 KE: 35171	; INLINE_round_g=1 UNROLL_round_h=1 UNROLL_round_g=1 UNROLL_keypair=1 UNROLL_enc=1 UNROLL_swap=1 TAB_key=1 TAB_sbox=1 TAB_q=1 SRAM_q=0 UNROLL_whiten=1 INLINE_whiten=1
@@ -82,7 +88,9 @@ SIZE: 1140	ASIZE: 1152	SRAM: 1710	E: 3801 KE: 32227	; INLINE_round_g=1 UNROLL_ro
 SIZE: 1784	ASIZE: 1792	SRAM: 1708	E: 3573 KE: 31619	; INLINE_round_g=1 UNROLL_round_h=1 UNROLL_round_g=1 UNROLL_keypair=1 UNROLL_enc=1 UNROLL_swap=1 TAB_key=1 TAB_sbox=1 TAB_q=1 SRAM_q=1 UNROLL_whiten=1 INLINE_whiten=1
 
 
-; In general:
+; A full list of all useful combinations of options is in config.txt.
+;
+; General recommendation:
 ; UNROLL_round_g = UNROLL_swap = UNROLL_whiten = 1, INLINE_whiten=0
 ; 	Other settings result in unfavourable trade-offs.
 ; UNROLL_keypair = UNROLL_enc = 0
@@ -91,6 +99,9 @@ SIZE: 1784	ASIZE: 1792	SRAM: 1708	E: 3573 KE: 31619	; INLINE_round_g=1 UNROLL_ro
 ;
 ; Increasing KEY_SIZE to 192 or 256 will increase SRAM size with 8/16
 ; bytes if TAB_key=0; as well as increase ROM footprint.
+;
+; Certain configurations are sub-optimal, in the sense that they have no 
+; advantage over another configuration. These are omitted from config.txt.
 ;
 ; Range of supported MCU's:
 ; - tinyTwofish can run on ATtiny13 with KEY_SIZE=128 and KEY_SIZE=192
