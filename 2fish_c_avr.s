@@ -26,15 +26,9 @@
 .include "2fish_avr.cfg"
 .include "avrmacros.s"
 
-.if !STATIC
-.error "Must set STATIC=1 in 2fish_avr.cfg to link with C programs."
-.endif
-
 .section .text
 
-.global twofish_call_saver, twofish_enc_trampoline, twofish_keysize_trampoline
-
-.equ twofish_keysize_trampoline, 2*KEY_SIZE/8
+.global twofish_call_saver, twofish_enc_trampoline
 
 ;? Z -> actual procedure to call
 twofish_call_saver:
@@ -65,9 +59,3 @@ twofish_enc_trampoline:
     st X+, 4+\i
     .endr
     ret
-
-.if TAB_q && SRAM_q
-.section .init8
-    rcall twofish_init
-.endif
-

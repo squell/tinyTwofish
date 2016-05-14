@@ -37,7 +37,7 @@ kat: kat_test.o 2fish_avr.o
 ckat: kat_example.o 2fish_c_avr.o 2fish_avr.o
 	avr-gcc ${CFLAGS} -mmcu=${CHIP} $+ -o $@
 
-2fish_avr.o: 2fish_avr.s 2fish_avr.cfg
+2fish_avr.o: 2fish_avr.s 2fish_avr.cfg 2fish_avr.key
 example.o: example.s 2fish_avr.cfg
 kat_test.o: kat_test.s 2fish_avr.cfg
 

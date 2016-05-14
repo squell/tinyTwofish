@@ -24,13 +24,7 @@ USAGE:
 
 Link with 2fish_avr.o and 2fish_c_avr.o
 
-This file defines three macro's, which you can use as-if
-
-const unsigned int twofish_keysize;   
-    A constant telling you what key-size (in bytes) tinyTwofish was assembled with
-
-twofish_setkey(const unsigned char master_key[twofish_keysize]);
-    Sets the Twofish key to `master_key'.
+This file defines the following macro:
 
 twofish_encrypt(unsigned char data[16]);
     Encrypt a single data block.
@@ -39,27 +33,16 @@ EXAMPLE:
 
 #include "2fish_c_avr.h"
 
-char mkey[32];
+char data[16];
 
 int main(void)
 {
-    twofish_setkey(mkey);
-    twofish_encrypt(mkey);
+    twofish_encrypt(data);
     asm("cli");
     asm("sleep");
 }
 
 */
-
-/* not a compile-time constant, but better than nothing */
-#define twofish_keysize ((unsigned int)twofish_keysize_trampoline)
-
-/* work arounds are necessary to tell avr-gcc that inputs are clobbered as well */
-#define twofish_setkey(master_key) { \
-    register void *clobber; \
-    asm volatile("rcall twofish_call_saver" : "=x"(clobber), "=z"(clobber) : "z"(twofish_key), "x"(&master_key[twofish_keysize]) \
-        : "r0", "r18", "r19", "r20", "r21", "r22", "r23", "r24", "r25"); \
-    }
 
 #define twofish_encrypt(data) { \
     register void *clobber; \
@@ -68,7 +51,5 @@ int main(void)
     }
 
 /* do not call these functions from C code */
-extern twofish_key();
 extern twofish_enc_trampoline();
-extern twofish_keysize_trampoline();
 
