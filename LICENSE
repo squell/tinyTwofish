@@ -1,4 +1,4 @@
-  tinyTwofish implementation for tinyAVR (ATtiny25/45/85)
+  A configurable Twofish implementation for Atmel AVR
 
   Copyright (C) 2014 Marc Schoolderman
 
